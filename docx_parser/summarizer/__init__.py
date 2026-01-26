@@ -24,6 +24,13 @@ from typing import Optional, Literal
 
 from .base import TableSummarizer
 
+# .env 파일 자동 로드 (있으면)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv 없으면 무시
+
 SummarizerType = Literal["openai", "claude", "gemini", "cerebras"]
 
 
@@ -37,7 +44,7 @@ def create_table_summarizer(
 
     Args:
         provider: 제공자 타입 ("openai", "claude", "gemini", "cerebras")
-        api_key: API 키 (없으면 환경변수 사용)
+        api_key: API 키 (없으면 환경변수 또는 .env 파일에서 로드)
         model: 모델명 (기본값 사용 시 None)
         **kwargs: 제공자별 추가 옵션
 

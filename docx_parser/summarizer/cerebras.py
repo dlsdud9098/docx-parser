@@ -48,8 +48,8 @@ class CerebrasSummarizer(TableSummarizer):
         """
         super().__init__(model=model, prompt=prompt, max_tokens=max_tokens, language=language)
 
-        # Parse API keys
-        env_value = os.environ.get("CEREBRAS_API_KEY")
+        # Parse API keys (CEREBRAS_API_KEY 또는 CEREBRAS_API_KEYS 지원)
+        env_value = os.environ.get("CEREBRAS_API_KEY") or os.environ.get("CEREBRAS_API_KEYS")
         self._api_keys = self._parse_api_keys(api_key, env_value)
 
         if not self._api_keys:
