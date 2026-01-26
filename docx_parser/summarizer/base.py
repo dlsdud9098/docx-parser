@@ -224,13 +224,17 @@ class TableSummarizer(ABC):
 
         result = {}
 
+        # 각 키당 담당하는 테이블 수에 따라 delay 결정
+        tables_per_key = len(tables) / num_keys
+        delay = 1.0 if tables_per_key > 50 else 0.5
+
         def process_table(args):
             idx, table, summarizer_idx = args
             summarizer = summarizers[summarizer_idx % num_keys]
             prompt = table_prompts.get(table.index) if table_prompts else None
             try:
                 summary = summarizer._call_api(table, prompt)
-                time.sleep(1.0)  # rate limit 방지
+                time.sleep(delay)  # rate limit 방지
                 return table.index, summary
             except Exception as e:
                 return table.index, f"[테이블 요약 실패: {str(e)}]"
