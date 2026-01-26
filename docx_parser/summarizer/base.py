@@ -226,7 +226,7 @@ class TableSummarizer(ABC):
 
         # 각 키당 담당하는 테이블 수에 따라 delay 결정
         tables_per_key = len(tables) / num_keys
-        delay = 1.0 if tables_per_key > 50 else 0.5
+        delay = 2.0 if tables_per_key > 50 else 0.5
 
         def process_table(args):
             idx, table, summarizer_idx = args

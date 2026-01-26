@@ -397,7 +397,7 @@ def parse_docx(
                 # Try each provider in order
                 # Use longer delay for large table counts to avoid rate limits
                 table_count = len(result.tables_list)
-                delay = 1.0 if table_count > 50 else 0.5
+                delay = 2.0 if table_count > 50 else 0.5
 
                 for provider in providers:
                     try:
