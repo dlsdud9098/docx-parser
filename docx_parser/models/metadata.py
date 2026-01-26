@@ -6,6 +6,7 @@ This module contains metadata dataclasses for DOCX document properties.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
@@ -86,6 +87,7 @@ class DocxMetadata:
         file_path: Full path to the DOCX file.
         file_name: DOCX filename.
         file_size: File size in bytes.
+        year: Document year (user-specified or auto-extracted from filename).
 
     Example:
         >>> meta = DocxMetadata(
@@ -95,12 +97,21 @@ class DocxMetadata:
         ... )
         >>> meta.to_dict()
         {'title': 'Report', 'total_pages': 10, 'file_name': 'report.docx'}
+
+        >>> meta = DocxMetadata(file_name="GBCC 2022_결과보고서.docx")
+        >>> meta.to_dict()['year']
+        2022
+
+        >>> meta = DocxMetadata(file_name="report.docx", year=2023)
+        >>> meta.to_dict()['year']
+        2023
     """
     core: CoreMetadata = field(default_factory=CoreMetadata)
     app: AppMetadata = field(default_factory=AppMetadata)
     file_path: Optional[str] = None
     file_name: Optional[str] = None
     file_size: Optional[int] = None
+    year: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to flat dictionary for LangChain metadata.
@@ -158,5 +169,13 @@ class DocxMetadata:
             result["file_name"] = self.file_name
         if self.file_size:
             result["file_size"] = self.file_size
+
+        # Year (user-specified takes priority, otherwise auto-extract from filename)
+        if self.year:
+            result["year"] = self.year
+        elif self.file_name:
+            year_match = re.search(r'(20\d{2})', self.file_name)
+            if year_match:
+                result["year"] = int(year_match.group(1))
 
         return result

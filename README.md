@@ -255,6 +255,27 @@ print(result.metadata.core.created)    # 생성일
 # 앱 메타데이터
 print(result.metadata.app.pages)       # 페이지 수
 print(result.metadata.app.words)       # 단어 수
+
+# 연도 (파일명에서 자동 추출 또는 직접 지정)
+print(result.metadata.to_dict()['year'])  # 2022 (파일명: "GBCC 2022_결과보고서.docx")
+```
+
+### 연도 자동 추출
+
+파일명에서 `20XX` 패턴을 자동으로 추출하여 `year` 필드에 저장합니다.
+
+```python
+# 자동 추출: "GBCC 2022_결과보고서.docx" → year: 2022
+result = parse_docx("GBCC 2022_결과보고서.docx")
+print(result.metadata.to_dict()['year'])  # 2022
+
+# 사용자 직접 지정 (우선순위 높음)
+result = parse_docx("report.docx", year=2023)
+print(result.metadata.to_dict()['year'])  # 2023
+
+# LangChain 메타데이터에서도 사용 가능
+docs = result.to_langchain_documents()
+print(docs[0].metadata['year'])  # 2023
 ```
 
 ---
@@ -448,6 +469,7 @@ def parse_docx(
     extract_tables: bool = False,         # 테이블 별도 파일로 추출
     auto_summarize_tables: str | List[str] | bool = False,  # "openai", "claude", "gemini", "cerebras"
     summarizer_max_tokens: int = 200,     # 테이블 요약 최대 토큰
+    year: Optional[int] = None,           # 문서 연도 (미지정 시 파일명에서 자동 추출)
 ) -> ParseResult | List[ParseResult]
 ```
 

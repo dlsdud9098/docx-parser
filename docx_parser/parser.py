@@ -293,6 +293,7 @@ def parse_docx(
         List[Literal["openai", "claude", "gemini", "cerebras"]]
     ] = False,
     summarizer_max_tokens: int = 200,
+    year: Optional[int] = None,
 ) -> Union[ParseResult, List[ParseResult]]:
     """
     Convenience function to parse DOCX file(s).
@@ -323,6 +324,7 @@ def parse_docx(
             - "cerebras": Use Cerebras API (llama-3.3-70b)
             - ["cerebras", "openai", ...]: Fallback order (try first, if fails try next)
         summarizer_max_tokens: Max tokens for table summary (default: 200)
+        year: Document year (e.g., 2022). If not specified, auto-extracted from filename.
 
     Returns:
         ParseResult (single file) or List[ParseResult] (multiple files)
@@ -355,6 +357,10 @@ def parse_docx(
 
     def _process_result(result: ParseResult) -> None:
         """Process image and table descriptions for a result."""
+        # Set year in metadata (user-specified takes priority)
+        if year and result.metadata:
+            result.metadata.year = year
+
         # Handle image descriptions
         if auto_describe_images and vision_provider and result.images_list:
             result.describe_images(vision_provider, image_prompts=image_prompts)
