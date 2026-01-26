@@ -247,10 +247,8 @@ class ParseResult:
                 except Exception as e:
                     summary = f"[Table summary failed: {e}]"
             else:
-                if table.path:
-                    summary = table.path
-                else:
-                    summary = f"Table ({table.row_count}x{table.col_count})"
+                # summarizer 없으면 테이블 기본 정보 사용
+                summary = f"Table {table.index} ({table.row_count}x{table.col_count})"
 
             self.table_descriptions[table.index] = summary
 
