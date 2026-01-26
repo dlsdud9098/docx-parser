@@ -362,7 +362,6 @@ def parse_docx(
     image_prompts: Optional[Dict[int, str]] = None,
     save_file: bool = False,
     convert_images: bool = True,
-    convert_circled_numbers: bool = True, # ①②③ -> 1. 2. 3.
 ) -> ParseResult | List[ParseResult]
 ```
 
