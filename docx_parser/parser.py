@@ -395,13 +395,17 @@ def parse_docx(
                 last_error = None
 
                 # Try each provider in order
+                # Use longer delay for large table counts to avoid rate limits
+                table_count = len(result.tables_list)
+                delay = 1.0 if table_count > 50 else 0.5
+
                 for provider in providers:
                     try:
                         summarizer = create_table_summarizer(
                             provider=provider,
                             max_tokens=summarizer_max_tokens,
                         )
-                        summaries = summarizer.summarize_tables(result.tables_list, delay=0.5)
+                        summaries = summarizer.summarize_tables(result.tables_list, delay=delay)
                         break  # Success, stop trying
                     except Exception as e:
                         last_error = e
