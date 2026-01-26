@@ -53,7 +53,7 @@ from .retry import (
     calculate_delay,
 )
 
-ProviderType = Literal["openai", "anthropic", "google", "transformers"]
+ProviderType = Literal["openai", "anthropic", "google", "gemini", "transformers"]
 
 
 def create_vision_provider(
@@ -87,7 +87,8 @@ def create_vision_provider(
         # Anthropic
         provider = create_vision_provider("anthropic", model="claude-sonnet-4-20250514")
 
-        # Google Gemini
+        # Google Gemini (both "google" and "gemini" work)
+        provider = create_vision_provider("gemini", model="gemini-1.5-flash")
         provider = create_vision_provider("google", model="gemini-1.5-flash")
 
         # Hugging Face Transformers (로컬)
@@ -111,7 +112,7 @@ def create_vision_provider(
         from .anthropic import AnthropicVisionProvider
         return AnthropicVisionProvider(api_key=api_key, model=model, **kwargs)
 
-    elif provider == "google":
+    elif provider in ("google", "gemini"):
         from .google import GeminiVisionProvider
         return GeminiVisionProvider(api_key=api_key, model=model, **kwargs)
 
@@ -125,7 +126,7 @@ def create_vision_provider(
     else:
         raise ValueError(
             f"Unknown provider: {provider}. "
-            f"Supported: openai, anthropic, google, transformers"
+            f"Supported: openai, anthropic, google, gemini, transformers"
         )
 
 

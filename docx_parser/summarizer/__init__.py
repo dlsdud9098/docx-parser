@@ -31,7 +31,7 @@ try:
 except ImportError:
     pass  # python-dotenv 없으면 무시
 
-SummarizerType = Literal["openai", "claude", "gemini", "cerebras"]
+SummarizerType = Literal["openai", "claude", "gemini", "google", "cerebras"]
 
 
 def create_table_summarizer(
@@ -43,7 +43,7 @@ def create_table_summarizer(
     """Table Summarizer 팩토리 함수
 
     Args:
-        provider: 제공자 타입 ("openai", "claude", "gemini", "cerebras")
+        provider: 제공자 타입 ("openai", "claude", "gemini", "google", "cerebras")
         api_key: API 키 (없으면 환경변수 또는 .env 파일에서 로드)
         model: 모델명 (기본값 사용 시 None)
         **kwargs: 제공자별 추가 옵션
@@ -58,8 +58,9 @@ def create_table_summarizer(
         # Claude
         summarizer = create_table_summarizer("claude")
 
-        # Gemini
+        # Gemini (both "gemini" and "google" work)
         summarizer = create_table_summarizer("gemini")
+        summarizer = create_table_summarizer("google")
 
         # Cerebras
         summarizer = create_table_summarizer("cerebras")
@@ -79,7 +80,7 @@ def create_table_summarizer(
         from .claude import ClaudeSummarizer
         return ClaudeSummarizer(api_key=api_key, model=model, **kwargs)
 
-    elif provider == "gemini":
+    elif provider in ("gemini", "google"):
         from .gemini import GeminiSummarizer
         return GeminiSummarizer(api_key=api_key, model=model, **kwargs)
 
@@ -90,7 +91,7 @@ def create_table_summarizer(
     else:
         raise ValueError(
             f"Unknown provider: {provider}. "
-            f"Supported: openai, claude, gemini, cerebras"
+            f"Supported: openai, claude, gemini, google, cerebras"
         )
 
 

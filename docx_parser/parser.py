@@ -283,7 +283,11 @@ def parse_docx(
     max_heading_level: int = 6,
     table_format: TableFormat | str = TableFormat.MARKDOWN,
     vision_provider: Optional["VisionProvider"] = None,
-    auto_describe_images: bool = False,
+    auto_describe_images: Union[
+        bool,
+        Literal["openai", "anthropic", "gemini", "google", "transformers"],
+        List[Literal["openai", "anthropic", "gemini", "google", "transformers"]]
+    ] = False,
     image_prompts: Optional[Dict[int, str]] = None,
     save_file: bool = False,
     convert_images: bool = True,
@@ -291,10 +295,15 @@ def parse_docx(
     extract_tables: bool = False,
     auto_summarize_tables: Union[
         bool,
-        Literal["openai", "claude", "gemini", "cerebras"],
-        List[Literal["openai", "claude", "gemini", "cerebras"]]
+        Literal["openai", "claude", "gemini", "google", "cerebras"],
+        List[Literal["openai", "claude", "gemini", "google", "cerebras"]]
     ] = False,
     summarizer_max_tokens: int = 200,
+    vision_max_tokens: int = 300,
+    vision_model: Optional[str] = None,
+    vision_load_in_4bit: bool = False,
+    vision_load_in_8bit: bool = False,
+    vision_batch_size: int = 4,
     year: Optional[int] = None,
 ) -> Union[ParseResult, List[ParseResult]]:
     """
@@ -311,8 +320,15 @@ def parse_docx(
         hierarchy_mode: How to detect heading hierarchy
         max_heading_level: Maximum heading depth (1-6)
         table_format: Output format for tables
-        vision_provider: VisionProvider instance for image description
-        auto_describe_images: Automatically generate image descriptions
+        vision_provider: VisionProvider instance for image description (deprecated, use auto_describe_images)
+        auto_describe_images: Provider(s) for image description (vision AI)
+            - False: No image description (default)
+            - True: Use vision_provider if provided
+            - "openai": Use OpenAI API (gpt-4o)
+            - "anthropic": Use Anthropic Claude API (claude-sonnet-4-20250514)
+            - "gemini" or "google": Use Google Gemini API (gemini-1.5-flash)
+            - "transformers": Use local Transformers model (LLaVA)
+            - ["gemini", "openai", ...]: Fallback order (try first, if fails try next)
         image_prompts: Dictionary mapping image index to custom prompt
         save_file: Whether to save content file when output_dir is specified
         convert_images: Convert non-standard image formats to PNG
@@ -322,10 +338,15 @@ def parse_docx(
             - False: No summarization (default)
             - "openai": Use OpenAI API (gpt-4o-mini)
             - "claude": Use Anthropic Claude API (claude-3-5-haiku)
-            - "gemini": Use Google Gemini API (gemini-2.0-flash)
+            - "gemini" or "google": Use Google Gemini API (gemini-2.0-flash)
             - "cerebras": Use Cerebras API (llama-3.3-70b)
             - ["cerebras", "openai", ...]: Fallback order (try first, if fails try next)
         summarizer_max_tokens: Max tokens for table summary (default: 200)
+        vision_max_tokens: Max tokens for image description (default: 300)
+        vision_model: Model ID for vision provider (e.g., "gpt-4o-mini", "llava-hf/llava-v1.6-mistral-7b-hf")
+        vision_load_in_4bit: Use 4-bit quantization for transformers (reduces VRAM usage)
+        vision_load_in_8bit: Use 8-bit quantization for transformers
+        vision_batch_size: Batch size for transformers (default: 4, adjust based on VRAM)
         year: Document year (e.g., 2022). If not specified, auto-extracted from filename.
 
     Returns:
@@ -370,8 +391,59 @@ def parse_docx(
             result.metadata.year = year
 
         # Handle image descriptions (with vision AI)
-        if auto_describe_images and vision_provider and result.images_list:
-            result.describe_images(vision_provider, image_prompts=image_prompts)
+        if auto_describe_images and result.images_list:
+            # Normalize providers to list
+            if isinstance(auto_describe_images, str):
+                vision_providers = [auto_describe_images]
+            elif isinstance(auto_describe_images, list):
+                vision_providers = auto_describe_images
+            elif auto_describe_images is True and vision_provider:
+                # Backward compatibility: use provided vision_provider
+                result.describe_images(vision_provider, image_prompts=image_prompts)
+                vision_providers = []  # Skip provider loop
+            else:
+                vision_providers = []
+
+            if vision_providers:
+                from .vision import create_vision_provider
+
+                last_error = None
+                described = False
+
+                for provider_name in vision_providers:
+                    try:
+                        # Build kwargs based on provider type
+                        provider_kwargs = {
+                            "max_tokens": vision_max_tokens,
+                        }
+
+                        # Add model if specified
+                        if vision_model:
+                            if provider_name == "transformers":
+                                provider_kwargs["model"] = vision_model
+                            else:
+                                provider_kwargs["model"] = vision_model
+
+                        # Add transformers-specific options
+                        if provider_name == "transformers":
+                            provider_kwargs["load_in_4bit"] = vision_load_in_4bit
+                            provider_kwargs["load_in_8bit"] = vision_load_in_8bit
+                            provider_kwargs["batch_size"] = vision_batch_size
+
+                        provider = create_vision_provider(
+                            provider=provider_name,
+                            **provider_kwargs,
+                        )
+                        result.describe_images(provider, image_prompts=image_prompts)
+                        described = True
+                        break  # Success, stop trying
+                    except Exception as e:
+                        last_error = e
+                        continue  # Try next provider
+
+                if not described and last_error:
+                    import warnings
+                    warnings.warn(f"All vision providers failed. Last error: {last_error}")
 
         # Always replace image placeholders with paths (like tables)
         if result.images_list:

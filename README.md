@@ -60,12 +60,12 @@ print(result.metadata)     # DOCX 메타데이터
 ```python
 # 마크다운으로 자동 저장
 result = parse_docx("document.docx", output_dir="output", save_file=True)
-# → output/document.md, output/images/document/
+# → output/document/document.md, output/document/images/
 
 # JSON으로 저장
 result = parse_docx("document.docx", output_dir="output",
                     output_format="json", save_file=True)
-# → output/document.json
+# → output/document/document.json
 ```
 
 | output_format | 저장 파일         |
@@ -106,59 +106,115 @@ result = parse_docx("document.docx", output_dir="output", convert_images=False)
 
 ### 지원 Provider
 
-| Provider         | 모델                     |
-| ---------------- | ------------------------ |
-| **OpenAI**       | gpt-4o, gpt-4o-mini      |
-| **Anthropic**    | claude-sonnet-4-20250514 |
-| **Google**       | gemini-1.5-flash         |
-| **Transformers** | LLaVA, Qwen-VL 등 (로컬) |
+| Provider          | 모델                     | 환경변수            |
+| ----------------- | ------------------------ | ------------------- |
+| **openai**        | gpt-4o, gpt-4o-mini      | `OPENAI_API_KEY`    |
+| **anthropic**     | claude-sonnet-4-20250514 | `ANTHROPIC_API_KEY` |
+| **gemini/google** | gemini-1.5-flash         | `GOOGLE_API_KEY`    |
+| **transformers**  | LLaVA, Qwen-VL 등 (로컬) | -                   |
 
-### 기본 사용
+> **Note**: Cerebras는 텍스트 전용 모델만 제공하므로 Vision(이미지 설명)에는 사용할 수 없습니다. 테이블 요약에만 사용 가능합니다.
+
+### 기본 사용 (간편 방식)
 
 ```python
 from docx_parser import parse_docx
-from docx_parser.vision import create_vision_provider
 
-provider = create_vision_provider("openai")
-
+# Gemini로 이미지 설명 (환경변수: GOOGLE_API_KEY)
 result = parse_docx("document.docx", "output",
-    vision_provider=provider,
-    auto_describe_images=True
+    auto_describe_images="gemini"
 )
 
-# [IMAGE_1] → [Image: 회사 로고 이미지...] 자동 치환
+# OpenAI로 이미지 설명 (환경변수: OPENAI_API_KEY)
+result = parse_docx("document.docx", "output",
+    auto_describe_images="openai"
+)
+
+# [IMAGE_1] → [IMAGE_1: 회사 로고 이미지...](path) 자동 치환
 print(result.content)
+```
+
+### Fallback (여러 Provider 순차 시도)
+
+```python
+# gemini 실패 → openai → anthropic 순서로 시도
+result = parse_docx("document.docx", "output",
+    auto_describe_images=["gemini", "openai", "anthropic"]
+)
 ```
 
 ### 이미지별 프롬프트
 
 ```python
 result = parse_docx("document.docx", "output",
+    auto_describe_images="gemini",
     image_prompts={
         1: "이 기술 도면을 상세히 분석해주세요.",
         2: "이 사진을 간단히 설명해주세요.",
         3: "이 차트의 트렌드를 분석해주세요.",
-    },
+    }
+)
+```
+
+### 고급 사용 (VisionProvider 직접 생성)
+
+```python
+from docx_parser import parse_docx
+from docx_parser.vision import create_vision_provider
+
+provider = create_vision_provider("openai", model="gpt-4o", max_tokens=500)
+
+result = parse_docx("document.docx", "output",
     vision_provider=provider,
     auto_describe_images=True
 )
 ```
 
-### 로컬 모델 (GPU)
+### 로컬 모델 (GPU) - 간편 방식
 
 ```python
-provider = create_vision_provider("transformers",
-    model_id="llava-hf/llava-v1.6-mistral-7b-hf",
-    load_in_4bit=True,
-    batch_size=4,
+# 기본 설정 (LLaVA, FP16)
+result = parse_docx("document.docx", "output",
+    auto_describe_images="transformers"
+)
+
+# 4bit 양자화 (VRAM 절약)
+result = parse_docx("document.docx", "output",
+    auto_describe_images="transformers",
+    vision_load_in_4bit=True,
+    vision_batch_size=2
+)
+
+# 다른 모델 사용
+result = parse_docx("document.docx", "output",
+    auto_describe_images="transformers",
+    vision_model="Qwen/Qwen2-VL-7B-Instruct",
+    vision_load_in_4bit=True
 )
 ```
 
-| VRAM  | 권장 batch_size |
-| ----- | --------------- |
-| 8GB   | 2               |
-| 16GB  | 4               |
-| 24GB+ | 8               |
+### 로컬 모델 (GPU) - 고급 설정
+
+```python
+from docx_parser.vision import create_vision_provider
+
+provider = create_vision_provider("transformers",
+    model="llava-hf/llava-v1.6-mistral-7b-hf",
+    load_in_4bit=True,
+    batch_size=4,
+)
+
+result = parse_docx("document.docx", "output",
+    vision_provider=provider,
+    auto_describe_images=True
+)
+```
+
+| VRAM  | 권장 설정                                       |
+| ----- | ----------------------------------------------- |
+| 8GB   | `vision_load_in_4bit=True, vision_batch_size=1` |
+| 16GB  | `vision_load_in_4bit=True, vision_batch_size=4` |
+| 24GB+ | `vision_batch_size=8`                           |
 
 ---
 
@@ -185,12 +241,12 @@ print(result.content)              # [TABLE_N: 요약](path) 형태로 치환됨
 
 ### 지원 Provider
 
-| Provider     | 모델                    | 환경변수 (단수/복수 모두 지원)             |
-| ------------ | ----------------------- | ------------------------------------------ |
-| **openai**   | gpt-4o-mini             | `OPENAI_API_KEY` / `OPENAI_API_KEYS`       |
-| **claude**   | claude-3-5-haiku-latest | `ANTHROPIC_API_KEY` / `ANTHROPIC_API_KEYS` |
-| **gemini**   | gemini-2.0-flash        | `GOOGLE_API_KEY` / `GOOGLE_API_KEYS`       |
-| **cerebras** | llama-3.3-70b           | `CEREBRAS_API_KEY` / `CEREBRAS_API_KEYS`   |
+| Provider          | 모델                    | 환경변수 (단수/복수 모두 지원)             |
+| ----------------- | ----------------------- | ------------------------------------------ |
+| **openai**        | gpt-4o-mini             | `OPENAI_API_KEY` / `OPENAI_API_KEYS`       |
+| **claude**        | claude-3-5-haiku-latest | `ANTHROPIC_API_KEY` / `ANTHROPIC_API_KEYS` |
+| **gemini/google** | gemini-2.0-flash        | `GOOGLE_API_KEY` / `GOOGLE_API_KEYS`       |
+| **cerebras**      | llama-3.3-70b           | `CEREBRAS_API_KEY` / `CEREBRAS_API_KEYS`   |
 
 > `.env` 파일이 있으면 자동으로 로드됩니다 (`python-dotenv` 필요)
 
@@ -234,12 +290,12 @@ Rate limit 회피에 효과적입니다.
 
 ```
 output/
-├── document.md
-├── images/
-│   └── document/
-│       └── 001_image.png
-└── tables/
-    └── document/
+└── document/                # 문서별 폴더
+    ├── document.md
+    ├── images/
+    │   ├── 001_image.png
+    │   └── ...
+    └── tables/              # extract_tables=True
         ├── 001_table.json   # 또는 .md, .html
         ├── 002_table.json
         └── ...
@@ -461,11 +517,11 @@ output/
 ```markdown
 # 이미지 (경로 포함)
 
-[IMAGE_1](output/document/images/001_image1.png)
+[IMAGE_1](output/document/images/001_image.png)
 
 # 이미지 + Vision AI 설명
 
-[IMAGE_1: 차트 이미지입니다](output/document/images/001_image1.png)
+[IMAGE_1: 차트 이미지입니다](output/document/images/001_image.png)
 
 # 테이블 (경로 + 요약)
 
@@ -488,14 +544,19 @@ def parse_docx(
     extract_metadata: bool = True,
     hierarchy_mode: str = "none",         # "none", "auto", "style", "font_size", "pattern"
     heading_patterns: Optional[List[Tuple[str, int]]] = None,  # pattern 모드용
-    vision_provider: Optional[VisionProvider] = None,
-    auto_describe_images: bool = False,
+    vision_provider: Optional[VisionProvider] = None,  # 직접 provider 전달 (고급)
+    auto_describe_images: str | List[str] | bool = False,  # "openai", "anthropic", "gemini", "transformers"
     image_prompts: Optional[Dict[int, str]] = None,
     save_file: bool = False,
     convert_images: bool = True,
     extract_tables: bool = False,         # 테이블 별도 파일로 추출
-    auto_summarize_tables: str | List[str] | bool = False,  # "openai", "claude", "gemini", "cerebras"
+    auto_summarize_tables: str | List[str] | bool = False,  # "openai", "claude", "gemini", "google", "cerebras"
     summarizer_max_tokens: int = 200,     # 테이블 요약 최대 토큰
+    vision_max_tokens: int = 300,         # 이미지 설명 최대 토큰
+    vision_model: Optional[str] = None,   # Vision 모델 ID (예: "gpt-4o-mini", "llava-hf/...")
+    vision_load_in_4bit: bool = False,    # Transformers 4bit 양자화
+    vision_load_in_8bit: bool = False,    # Transformers 8bit 양자화
+    vision_batch_size: int = 4,           # Transformers 배치 크기
     year: Optional[int] = None,           # 문서 연도 (미지정 시 파일명에서 자동 추출)
 ) -> ParseResult | List[ParseResult]
 ```
