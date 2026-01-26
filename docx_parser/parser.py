@@ -138,15 +138,24 @@ class DocxParser:
         if pattern.startswith('^'):
             return pattern
 
-        # Pattern templates
+        # Pattern templates (공백 유무 모두 지원)
         conversions = [
-            (r'^[IVXLCDMivxlcdm]+\. $', r'^[IVXLCDMivxlcdm]+\. '),
-            (r'^\d+\. $', r'^\d+\. '),
-            (r'^\d+\) $', r'^\d+\) '),
-            (r'^\(\d+\) $', r'^\(\d+\) '),
-            (r'^[A-Z]+\. $', r'^[A-Z]+\. '),
-            (r'^[a-z]+\. $', r'^[a-z]+\. '),
-            (r'^[가-힣]\. $', r'^[가-힣]\. '),
+            # 로마숫자 + 점 (I. II. III.)
+            (r'^[IVXLCDMivxlcdm]+\. ?$', r'^[IVXLCDMivxlcdm]+\. '),
+            # 숫자 + 점 (1. 2. 3.)
+            (r'^\d+\. ?$', r'^\d+\. '),
+            # 숫자 + 닫는 괄호 (1) 2) 3))
+            (r'^\d+\) ?$', r'^\d+\) '),
+            # 괄호 + 숫자 ((1) (2) (3))
+            (r'^\(\d+\) ?$', r'^\(\d+\) '),
+            # 대문자 + 점 (A. B. C.)
+            (r'^[A-Z]+\. ?$', r'^[A-Z]+\. '),
+            # 소문자 + 점 (a. b. c.)
+            (r'^[a-z]+\. ?$', r'^[a-z]+\. '),
+            # 한글 + 점 (가. 나. 다.)
+            (r'^[가-힣]\. ?$', r'^[가-힣]\. '),
+            # 원숫자 (① ② ③)
+            (r'^[①②③④⑤⑥⑦⑧⑨⑩] ?$', r'^[①②③④⑤⑥⑦⑧⑨⑩] ?'),
         ]
 
         for check, result in conversions:
@@ -350,6 +359,7 @@ def parse_docx(
         if auto_describe_images and vision_provider and result.images_list:
             result.describe_images(vision_provider, image_prompts=image_prompts)
             result.content = result.replace_placeholders(result.image_descriptions)
+            result.markdown_content = result.content  # Update markdown_content too
 
         # Handle table descriptions
         if auto_summarize_tables and result.tables_list:
@@ -393,6 +403,7 @@ def parse_docx(
                 result.describe_tables(summarizer=None)
 
             result.content = result.replace_table_placeholders(result.table_descriptions)
+            result.markdown_content = result.content  # Update markdown_content too
 
     # Handle list of paths
     if isinstance(docx_path, list):
