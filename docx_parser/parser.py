@@ -179,6 +179,82 @@ class TableFormat(str, Enum):
     TEXT = "text"            # Tab-separated text
 
 
+class BlockType(str, Enum):
+    """Content block types for structured JSON output"""
+    PARAGRAPH = "paragraph"
+    HEADING = "heading"
+    TABLE = "table"
+    IMAGE = "image"
+
+
+# ============================================================================
+# Content Block Data Classes
+# ============================================================================
+
+@dataclass
+class ParagraphBlock:
+    """Paragraph content block"""
+    content: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "type": BlockType.PARAGRAPH.value,
+            "content": self.content
+        }
+
+
+@dataclass
+class HeadingBlock:
+    """Heading content block"""
+    content: str
+    level: int
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "type": BlockType.HEADING.value,
+            "level": self.level,
+            "content": self.content
+        }
+
+
+@dataclass
+class TableBlock:
+    """Table content block"""
+    rows: List[List[str]]
+    headers: Optional[List[str]] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        result = {
+            "type": BlockType.TABLE.value,
+            "rows": self.rows
+        }
+        if self.headers:
+            result["headers"] = self.headers
+        if self.metadata:
+            result["metadata"] = self.metadata
+        return result
+
+
+@dataclass
+class ImageBlock:
+    """Image content block"""
+    index: int
+    path: Optional[str] = None
+    description: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        result = {
+            "type": BlockType.IMAGE.value,
+            "index": self.index
+        }
+        if self.path:
+            result["path"] = self.path
+        if self.description:
+            result["description"] = self.description
+        return result
+
+
 # ============================================================================
 # Metadata Data Classes
 # ============================================================================
@@ -345,7 +421,7 @@ class TableData:
 @dataclass
 class ParseResult:
     """Result of parsing a DOCX file"""
-    content: str  # Content with [IMAGE_N] placeholders (format depends on output_format)
+    content: Union[str, List[Dict[str, Any]]]  # String (markdown/text) or List of blocks (json)
     images: Dict[int, Path] = field(default_factory=dict)  # {num: image_path} - backward compat
     image_mapping: Dict[int, str] = field(default_factory=dict)  # {num: filename} - backward compat
     source: Optional[Path] = None
@@ -355,6 +431,7 @@ class ParseResult:
     images_list: List[ImageInfo] = field(default_factory=list)  # Improved image structure
     output_format: OutputFormat = OutputFormat.MARKDOWN
     text_content: Optional[str] = None  # Plain text version (always available)
+    markdown_content: Optional[str] = None  # Markdown version (always available)
     # Vision-generated image descriptions
     image_descriptions: Dict[int, str] = field(default_factory=dict)
 
@@ -362,8 +439,12 @@ class ParseResult:
         """Save content to markdown file"""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        # Use markdown_content if content is blocks (JSON mode)
+        content = self.markdown_content if self.markdown_content else self.content
+        if isinstance(content, list):
+            content = self.markdown_content or ""
         with open(path, 'w', encoding='utf-8') as f:
-            f.write(self.content)
+            f.write(content)
         return path
 
     def save_text(self, path: str | Path) -> Path:
@@ -371,6 +452,8 @@ class ParseResult:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         content = self.text_content if self.text_content else self.content
+        if isinstance(content, list):
+            content = self.text_content or ""
         with open(path, 'w', encoding='utf-8') as f:
             f.write(content)
         return path
@@ -509,8 +592,14 @@ class ParseResult:
 
     def to_json(self) -> str:
         """Convert ParseResult to JSON string"""
+        # If content is already blocks (JSON mode), use it directly
+        if isinstance(self.content, list):
+            content_data = self.content
+        else:
+            content_data = self.text_content or self.content
+
         data = {
-            "content": self.text_content or self.content,
+            "content": content_data,
             "image_count": self.image_count,
             "images": [img.to_dict() for img in self.images_list],
             "source": str(self.source) if self.source else None,
@@ -854,8 +943,8 @@ class DocxParser:
         if self.output_format == OutputFormat.TEXT:
             content = text_content
         elif self.output_format == OutputFormat.JSON:
-            # JSON content will be generated in to_json(), store markdown for now
-            content = markdown_content
+            # Parse as structured blocks for JSON output
+            content = self._parse_content_blocks(doc_xml, rid_to_num, styles, font_size_hierarchy)
         else:
             content = markdown_content
 
@@ -869,6 +958,7 @@ class DocxParser:
             images_list=images_list,
             output_format=self.output_format,
             text_content=text_content,
+            markdown_content=markdown_content,
         )
 
     # ========================================================================
@@ -1253,6 +1343,126 @@ class DocxParser:
                         result.append(table_text)
 
         return "\n\n".join(result)
+
+    def _parse_content_blocks(
+        self,
+        doc_xml: str,
+        rid_to_num: Dict[str, int],
+        styles: Optional[Dict[str, StyleInfo]] = None,
+        font_size_hierarchy: Optional[Dict[int, int]] = None
+    ) -> List[Dict[str, Any]]:
+        """Parse document.xml to extract structured content blocks for JSON output"""
+        ns = self.NAMESPACES
+        root = ET.fromstring(doc_xml)
+        blocks: List[Dict[str, Any]] = []
+
+        styles = styles or {}
+        font_size_hierarchy = font_size_hierarchy or {}
+
+        for body in root.findall('.//w:body', ns):
+            for elem in body:
+                if elem.tag == f"{{{ns['w']}}}p":
+                    block = self._parse_paragraph_block(
+                        elem, rid_to_num, styles, font_size_hierarchy
+                    )
+                    if block:
+                        blocks.append(block)
+
+                elif elem.tag == f"{{{ns['w']}}}tbl":
+                    block = self._parse_table_block(elem)
+                    if block:
+                        blocks.append(block)
+
+        return blocks
+
+    def _parse_paragraph_block(
+        self,
+        elem: ET.Element,
+        rid_to_num: Dict[str, int],
+        styles: Optional[Dict[str, StyleInfo]] = None,
+        font_size_hierarchy: Optional[Dict[int, int]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Parse a paragraph element to a content block"""
+        ns = self.NAMESPACES
+        para_parts = []
+        image_indices = []
+
+        styles = styles or {}
+        font_size_hierarchy = font_size_hierarchy or {}
+
+        for child in elem.iter():
+            # Text
+            if child.tag == f"{{{ns['w']}}}t" and child.text:
+                para_parts.append(("text", child.text))
+
+            # Image (blip in drawing)
+            if child.tag == f"{{{ns['a']}}}blip":
+                embed = child.get(f"{{{ns['r']}}}embed")
+                if embed and embed in rid_to_num:
+                    num = rid_to_num[embed]
+                    image_indices.append(num)
+                    para_parts.append(("image", num))
+
+        # If paragraph only contains image(s), return image block(s)
+        text_content = "".join(part[1] for part in para_parts if part[0] == "text")
+
+        # Pure image paragraph
+        if not text_content.strip() and image_indices:
+            # Return first image as block (multiple images rare in single paragraph)
+            return ImageBlock(index=image_indices[0]).to_dict()
+
+        # Empty paragraph
+        if not text_content.strip():
+            return None
+
+        # Check if it's a heading
+        if self.hierarchy_mode != HierarchyMode.NONE:
+            heading_level = self._get_heading_level(elem, styles, font_size_hierarchy)
+            if heading_level:
+                return HeadingBlock(content=text_content, level=heading_level).to_dict()
+
+        # Regular paragraph (may contain inline images as placeholders)
+        content = text_content
+        if image_indices:
+            # Include image placeholders in text
+            content = "".join(
+                part[1] if part[0] == "text" else self.image_placeholder.format(num=part[1])
+                for part in para_parts
+            )
+
+        return ParagraphBlock(content=content).to_dict()
+
+    def _parse_table_block(self, elem: ET.Element) -> Optional[Dict[str, Any]]:
+        """Parse a table element to a content block"""
+        table_data = self._parse_table_data(elem)
+        if not table_data.rows:
+            return None
+
+        # Convert to simple rows format
+        rows = []
+        headers = None
+
+        for row_idx, row in enumerate(table_data.rows):
+            row_texts = []
+            for cell in row:
+                if not cell.is_merged_continuation:
+                    row_texts.append(cell.text)
+            if row_texts:
+                rows.append(row_texts)
+
+        # First row as headers if present
+        if rows:
+            headers = rows[0]
+            rows = rows[1:] if len(rows) > 1 else []
+
+        return TableBlock(
+            rows=rows,
+            headers=headers,
+            metadata={
+                "col_count": table_data.col_count,
+                "row_count": table_data.row_count
+            }
+        ).to_dict()
 
     def _parse_paragraph(
         self,

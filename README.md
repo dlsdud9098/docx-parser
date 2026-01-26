@@ -271,7 +271,9 @@ def parse_docx(
 ### ParseResult
 
 ```python
-result.content             # 마크다운 콘텐츠
+result.content             # 콘텐츠 (markdown/text: str, json: List[block])
+result.text_content        # 순수 텍스트 (항상 str)
+result.markdown_content    # 마크다운 (항상 str)
 result.images              # {num: Path} 이미지 경로
 result.image_count         # 이미지 개수
 result.metadata            # DocxMetadata
@@ -292,6 +294,30 @@ result.to_langchain_documents(described=False, provider=None)
 result.to_llama_index_documents(described=False, provider=None)
 result.to_langchain_metadata()
 ```
+
+### output_format="json" 블록 구조
+
+`output_format="json"`일 때 `result.content`는 블록 리스트로 반환됩니다.
+
+```python
+result = parse_docx("document.docx", output_format="json")
+
+# result.content 예시:
+[
+    {"type": "heading", "level": 1, "content": "문서 제목"},
+    {"type": "paragraph", "content": "일반 텍스트 내용입니다."},
+    {"type": "image", "index": 1},
+    {"type": "table", "headers": ["이름", "나이"], "rows": [["홍길동", "30"]], "metadata": {...}},
+    {"type": "paragraph", "content": "또 다른 텍스트."}
+]
+```
+
+| 블록 타입   | 필드                                               |
+| ----------- | -------------------------------------------------- |
+| `paragraph` | `content`                                          |
+| `heading`   | `level`, `content`                                 |
+| `table`     | `headers`, `rows`, `metadata`                      |
+| `image`     | `index`, `path`(optional), `description`(optional) |
 
 ---
 
