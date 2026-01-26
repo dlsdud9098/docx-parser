@@ -4,6 +4,7 @@ Base class for table summarizers.
 
 import time
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -160,16 +161,26 @@ class TableSummarizer(ABC):
         table_prompts: Optional[Dict[int, str]] = None,
         delay: float = 0.5,
     ) -> Dict[int, str]:
-        """여러 테이블 요약 생성 (순차 처리 + 딜레이)
+        """여러 테이블 요약 생성
 
         Args:
             tables: TableInfo 리스트
             table_prompts: {테이블_인덱스: 프롬프트} 매핑 (선택)
-            delay: 요청 간 대기 시간 (초, 기본: 0.5)
+            delay: 요청 간 대기 시간 (초, 기본: 0.5) - 순차 처리 시만 사용
 
         Returns:
             {테이블_인덱스: 요약} 딕셔너리
+
+        Note:
+            API 키가 여러 개 등록되어 있으면 자동으로 병렬 처리합니다.
+            - 키 1개: 순차 처리 (delay 적용)
+            - 키 2개 이상: 병렬 처리 (키 개수만큼 동시 실행)
         """
+        # API 키가 여러 개면 자동으로 병렬 처리
+        if len(self._api_keys) > 1:
+            return self._summarize_tables_parallel(tables, table_prompts)
+
+        # 순차 처리
         result = {}
         for i, table in enumerate(tables):
             try:
@@ -182,6 +193,56 @@ class TableSummarizer(ABC):
             # 마지막 요청이 아니면 딜레이
             if delay > 0 and i < len(tables) - 1:
                 time.sleep(delay)
+        return result
+
+    def _summarize_tables_parallel(
+        self,
+        tables: List["TableInfo"],
+        table_prompts: Optional[Dict[int, str]] = None,
+    ) -> Dict[int, str]:
+        """여러 API 키로 병렬 처리
+
+        각 API 키마다 별도 summarizer 인스턴스를 생성하고
+        ThreadPoolExecutor로 동시 처리합니다.
+        """
+        from . import create_table_summarizer
+
+        num_keys = len(self._api_keys)
+        max_workers = min(num_keys, len(tables))
+
+        # 각 API 키별로 summarizer 생성
+        summarizers = []
+        for key in self._api_keys:
+            summarizer = create_table_summarizer(
+                provider=self.provider_name,
+                api_key=key,
+                model=self.model,
+                max_tokens=self.max_tokens,
+                language=self.language,
+            )
+            summarizers.append(summarizer)
+
+        result = {}
+
+        def process_table(args):
+            idx, table, summarizer_idx = args
+            summarizer = summarizers[summarizer_idx % num_keys]
+            prompt = table_prompts.get(table.index) if table_prompts else None
+            try:
+                summary = summarizer._call_api(table, prompt)
+                return table.index, summary
+            except Exception as e:
+                return table.index, f"[테이블 요약 실패: {str(e)}]"
+
+        # 테이블을 API 키별로 분배
+        tasks = [(i, table, i) for i, table in enumerate(tables)]
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(process_table, task) for task in tasks]
+            for future in as_completed(futures):
+                table_index, summary = future.result()
+                result[table_index] = summary
+
         return result
 
     def _get_default_prompt(self, language: str) -> str:

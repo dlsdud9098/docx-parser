@@ -206,7 +206,7 @@ result = parse_docx(
 )
 ```
 
-### 멀티 API 키 (Rate Limit 자동 전환)
+### 멀티 API 키 (자동 병렬 처리)
 
 ```bash
 # 환경변수에 쉼표로 구분하여 여러 키 설정
@@ -223,7 +223,12 @@ summarizer = CerebrasSummarizer(api_key=["key1", "key2", "key3"])
 summarizer = CerebrasSummarizer(api_key="key1,key2,key3")
 ```
 
-Rate limit (429) 또는 인증 에러 발생 시 자동으로 다음 키로 전환됩니다.
+**동작 방식:**
+
+- **키 1개**: 순차 처리 (delay 적용)
+- **키 2개 이상**: 자동 병렬 처리 (키 개수만큼 동시 실행)
+
+Rate limit 회피에 효과적입니다.
 
 ### 출력 구조
 

@@ -405,7 +405,10 @@ def parse_docx(
                             provider=provider,
                             max_tokens=summarizer_max_tokens,
                         )
-                        summaries = summarizer.summarize_tables(result.tables_list, delay=delay)
+                        summaries = summarizer.summarize_tables(
+                            result.tables_list,
+                            delay=delay,
+                        )
                         break  # Success, stop trying
                     except Exception as e:
                         last_error = e
