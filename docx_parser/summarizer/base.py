@@ -253,10 +253,10 @@ class TableSummarizer(ABC):
     def _get_default_prompt(self, language: str) -> str:
         """언어별 기본 프롬프트"""
         prompts = {
-            "ko": "이 테이블의 내용을 한 문장으로 간결하게 요약해주세요. 테이블의 주제와 핵심 데이터를 포함해야 합니다.",
-            "en": "Summarize this table in one concise sentence. Include the topic and key data of the table.",
-            "ja": "このテーブルの内容を一文で簡潔に要約してください。テーブルの主題と重要なデータを含めてください。",
-            "zh": "请用一句话简洁地总结这个表格。包括表格的主题和关键数据。",
+            "ko": "이 테이블이 무엇에 대한 표인지 설명하세요. 표의 주제, 컬럼 구성, 데이터 범위를 포함하세요. 내용을 서술형으로 풀어쓰지 말고 표의 구조와 목적을 설명하세요.",
+            "en": "Describe what this table is about. Include the topic, column structure, and data range. Do not rephrase the content narratively - describe the structure and purpose of the table.",
+            "ja": "このテーブルが何についてのものかを説明してください。主題、列構成、データ範囲を含めてください。内容を文章形式で言い換えず、テーブルの構造と目的を説明してください。",
+            "zh": "描述这个表格是关于什么的。包括主题、列结构和数据范围。不要用叙述形式重述内容，而是描述表格的结构和目的。",
         }
         return prompts.get(language, prompts["en"])
 
@@ -264,7 +264,7 @@ class TableSummarizer(ABC):
         """테이블 내용을 LLM에 전달할 형식으로 변환 (메모리 데이터 사용)"""
         # TableInfo에 rows 데이터가 있으면 직접 사용 (파일 I/O 없음)
         if table.headers or table.rows:
-            return table.to_text(max_rows=10)
+            return table.to_text()  # 전체 테이블 전달
 
         # rows가 없으면 기본 정보만
         info = f"테이블 ({table.row_count}행 x {table.col_count}열)"
