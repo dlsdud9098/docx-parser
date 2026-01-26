@@ -142,6 +142,115 @@ def process_image(data: bytes, original_name: str, convert_to_png: bool = True) 
     return data, original_name
 
 
+# ============================================================================
+# Circled Number Conversion
+# ============================================================================
+
+# Circled numbers mapping: ① -> 1, ② -> 2, etc.
+CIRCLED_NUMBERS = {
+    '①': 1, '②': 2, '③': 3, '④': 4, '⑤': 5,
+    '⑥': 6, '⑦': 7, '⑧': 8, '⑨': 9, '⑩': 10,
+    '⑪': 11, '⑫': 12, '⑬': 13, '⑭': 14, '⑮': 15,
+    '⑯': 16, '⑰': 17, '⑱': 18, '⑲': 19, '⑳': 20,
+    '㉑': 21, '㉒': 22, '㉓': 23, '㉔': 24, '㉕': 25,
+    '㉖': 26, '㉗': 27, '㉘': 28, '㉙': 29, '㉚': 30,
+    '㉛': 31, '㉜': 32, '㉝': 33, '㉞': 34, '㉟': 35,
+}
+
+# Pattern to match circled numbers at the start of a line
+CIRCLED_NUMBER_PATTERN = re.compile(r'^([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳㉑㉒㉓㉔㉕㉖㉗㉘㉙㉚㉛㉜㉝㉞㉟])\s*(.*)$')
+
+
+def convert_circled_numbers(content: str, indent: str = "   ") -> str:
+    """Convert circled numbers (①②③) to numbered list format with indentation.
+
+    Args:
+        content: Text content with circled numbers
+        indent: Indentation string for content under numbered items (default: 3 spaces)
+
+    Returns:
+        Converted text with numbered list format
+
+    Example:
+        Input:
+            ① First item
+
+            Some content
+
+            ② Second item
+
+            Content here
+
+        Output:
+            1. First item
+
+               Some content
+
+            2. Second item
+
+               Content here
+    """
+    lines = content.split('\n')
+    result = []
+    in_numbered_section = False
+    empty_line_count = 0
+
+    # Patterns that indicate end of numbered section
+    section_end_patterns = [
+        r'^\(\d+\)',       # (1), (2), etc.
+        r'^#+ ',           # Markdown headings
+        r'^\|',            # Table rows
+        r'^---',           # Horizontal rules
+        r'^\[\w+\]',       # Image placeholders or links at start
+    ]
+    section_end_re = re.compile('|'.join(section_end_patterns))
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Check if line starts with circled number
+        match = CIRCLED_NUMBER_PATTERN.match(stripped)
+        if match:
+            circled = match.group(1)
+            rest = match.group(2)
+            num = CIRCLED_NUMBERS.get(circled, 0)
+            if num:
+                result.append(f"{num}. {rest}")
+                in_numbered_section = True
+                empty_line_count = 0
+                continue
+
+        # Check if this line ends the numbered section
+        if in_numbered_section and stripped:
+            # Check for section-ending patterns
+            if section_end_re.match(stripped):
+                in_numbered_section = False
+            # Check for too many consecutive empty lines (section break)
+            elif empty_line_count >= 3:
+                in_numbered_section = False
+                empty_line_count = 0
+
+        # Track empty lines
+        if not stripped:
+            empty_line_count += 1
+        else:
+            empty_line_count = 0
+
+        # If we're in a numbered section (after a circled number)
+        if in_numbered_section:
+            if stripped:
+                # Non-empty line: add indentation
+                result.append(f"{indent}{stripped}")
+            else:
+                # Empty line: keep as is (maintains spacing)
+                result.append(line)
+        else:
+            # Not in numbered section
+            result.append(line)
+
+    return '\n'.join(result)
+
+
 class VerticalMergeMode(str, Enum):
     """How to handle vertically merged cells"""
     REPEAT = "repeat"      # Repeat the value in merged cells
@@ -777,6 +886,7 @@ class DocxParser:
         max_heading_level: int = 6,
         table_format: TableFormat | str = TableFormat.MARKDOWN,
         convert_images: bool = True,
+        convert_circled_numbers: bool = True,
     ):
         """
         Initialize parser.
@@ -809,6 +919,7 @@ class DocxParser:
                 - "html": HTML table with colspan/rowspan
                 - "text": Tab-separated plain text
             convert_images: Convert non-standard formats (WDP, TMP, EMF) to PNG (default: True)
+            convert_circled_numbers: Convert ①②③ to numbered list format (default: True)
         """
         self.extract_images = extract_images
         self.image_placeholder = image_placeholder
@@ -820,6 +931,7 @@ class DocxParser:
         self.hierarchy_mode = HierarchyMode(hierarchy_mode)
         self.max_heading_level = min(max(1, max_heading_level), 6)
         self.table_format = TableFormat(table_format)
+        self.convert_circled_numbers = convert_circled_numbers
 
     def parse(
         self,
@@ -1342,7 +1454,13 @@ class DocxParser:
                     if table_text:
                         result.append(table_text)
 
-        return "\n\n".join(result)
+        content = "\n\n".join(result)
+
+        # Convert circled numbers to numbered list format if enabled
+        if self.convert_circled_numbers:
+            content = convert_circled_numbers(content)
+
+        return content
 
     def _parse_content_blocks(
         self,
@@ -1778,6 +1896,7 @@ def parse_docx(
     image_prompts: Optional[Dict[int, str]] = None,
     save_file: bool = False,
     convert_images: bool = True,
+    convert_circled_numbers: bool = True,
 ) -> Union[ParseResult, List[ParseResult]]:
     """
     Convenience function to parse DOCX file(s).
@@ -1823,6 +1942,9 @@ def parse_docx(
             - WDP (Windows Media Photo) -> PNG
             - TMP (detect actual format from magic bytes) -> PNG/JPEG
             - EMF/WMF (Windows Metafile) -> PNG (requires PIL)
+        convert_circled_numbers: Convert circled numbers to numbered list (default: True)
+            - ① ② ③ -> 1. 2. 3.
+            - Content between numbers is indented
 
     Returns:
         ParseResult (single file) or List[ParseResult] (multiple files)
@@ -1897,6 +2019,7 @@ def parse_docx(
         max_heading_level=max_heading_level,
         table_format=table_format,
         convert_images=convert_images,
+        convert_circled_numbers=convert_circled_numbers,
     )
 
     def _save_result(result: ParseResult, out_dir: Path, fmt: OutputFormat) -> None:
