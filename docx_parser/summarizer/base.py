@@ -251,34 +251,25 @@ class TableSummarizer(ABC):
         return result
 
     def _get_default_prompt(self, language: str) -> str:
-        """언어별 기본 프롬프트"""
-        prompts = {
-            "ko": """이 테이블에 대한 검색용 설명을 작성하세요:
-1. 표의 주제 (한 문장)
-2. 컬럼 구성
-3. 주요 키워드 (표에 등장하는 고유명사, 기관명, 인명, 날짜, 숫자 등 검색에 사용될 수 있는 핵심 단어들)
+        """언어별 기본 프롬프트 (영어 프롬프트, 응답 언어만 다름)"""
+        language_names = {
+            "ko": "Korean",
+            "en": "English",
+            "ja": "Japanese",
+            "zh": "Chinese",
+        }
+        response_lang = language_names.get(language, "English")
 
-내용을 서술형으로 풀어쓰지 말고, 검색 시 이 표를 찾을 수 있도록 핵심 정보와 키워드를 포함하세요.""",
-            "en": """Write a search-friendly description of this table:
+        return f"""Write a search-friendly description of this table.
+
+Instructions:
 1. Topic of the table (one sentence)
 2. Column structure
 3. Key terms (proper nouns, organization names, person names, dates, numbers - keywords that could be used to search for this table)
 
-Do not rephrase content narratively. Include core information and keywords to make this table discoverable via search.""",
-            "ja": """このテーブルの検索用説明を作成してください：
-1. テーブルの主題（一文）
-2. 列構成
-3. 主要キーワード（固有名詞、機関名、人名、日付、数字など、検索に使用される可能性のある重要な単語）
+Do not rephrase content narratively. Include core information and keywords to make this table discoverable via search.
 
-内容を文章形式で言い換えず、検索時にこのテーブルを見つけられるように核心情報とキーワードを含めてください。""",
-            "zh": """为这个表格编写搜索友好的描述：
-1. 表格主题（一句话）
-2. 列结构
-3. 关键词（专有名词、机构名、人名、日期、数字等可用于搜索的关键词）
-
-不要用叙述形式重述内容。包含核心信息和关键词，使这个表格可以通过搜索被发现。""",
-        }
-        return prompts.get(language, prompts["en"])
+IMPORTANT: Your response MUST be written in {response_lang}."""
 
     def _format_table_content(self, table: "TableInfo") -> str:
         """테이블 내용을 LLM에 전달할 형식으로 변환 (메모리 데이터 사용)"""
