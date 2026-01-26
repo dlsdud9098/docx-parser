@@ -61,6 +61,57 @@ def detect_image_format(data: bytes) -> Optional[str]:
     return None
 
 
+def _convert_wdp_to_png(data: bytes) -> Optional[bytes]:
+    """Convert WDP/JPEG XR to PNG using JxrDecApp (if available).
+
+    Args:
+        data: WDP image binary data
+
+    Returns:
+        PNG data if successful, None if conversion failed
+    """
+    import subprocess
+    import tempfile
+    import shutil
+
+    # Check if JxrDecApp is available
+    if not shutil.which('JxrDecApp'):
+        return None
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            wdp_path = Path(tmpdir) / 'input.wdp'
+            bmp_path = Path(tmpdir) / 'output.bmp'
+
+            # Write WDP file
+            with open(wdp_path, 'wb') as f:
+                f.write(data)
+
+            # Convert WDP to BMP using JxrDecApp
+            result = subprocess.run(
+                ['JxrDecApp', '-i', str(wdp_path), '-o', str(bmp_path)],
+                capture_output=True,
+                timeout=30
+            )
+
+            if result.returncode != 0 or not bmp_path.exists():
+                return None
+
+            # Convert BMP to PNG using PIL
+            from PIL import Image
+
+            img = Image.open(bmp_path)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+
+            output = io.BytesIO()
+            img.save(output, format='PNG')
+            return output.getvalue()
+
+    except Exception:
+        return None
+
+
 def convert_image_to_png(data: bytes, original_ext: str) -> Tuple[bytes, str]:
     """Convert image data to PNG format if needed.
 
@@ -85,6 +136,13 @@ def convert_image_to_png(data: bytes, original_ext: str) -> Tuple[bytes, str]:
             # It's already a standard format, just fix extension
             new_ext = '.jpg' if detected == 'jpeg' else f'.{detected}'
             return data, new_ext
+
+    # WDP/HDP (JPEG XR) - use JxrDecApp if available
+    if ext_lower in ('.wdp', '.hdp', '.jxr'):
+        png_data = _convert_wdp_to_png(data)
+        if png_data:
+            return png_data, '.png'
+        # Fall through to PIL attempt
 
     # Convert using PIL
     from PIL import Image
