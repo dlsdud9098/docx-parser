@@ -336,6 +336,12 @@ class HierarchyMode(str, Enum):
     AUTO = "auto"            # Style first, font_size fallback
     STYLE = "style"          # Use styles.xml outlineLevel only
     FONT_SIZE = "font_size"  # Use font size only
+    PATTERN = "pattern"      # Use custom text patterns (e.g., "I. ", "1. ", "1)")
+
+
+# Type alias for heading patterns: list of (pattern, header_level)
+# Example: [("I. ", 1), ("1. ", 2), ("1)", 3), ("(1)", 4)]
+HeadingPattern = List[Tuple[str, int]]
 
 
 class TableFormat(str, Enum):
@@ -945,6 +951,7 @@ class DocxParser:
         table_format: TableFormat | str = TableFormat.MARKDOWN,
         convert_images: bool = True,
         convert_circled_numbers: bool = True,
+        heading_patterns: Optional[List[Tuple[str, int]]] = None,
     ):
         """
         Initialize parser.
@@ -970,6 +977,7 @@ class DocxParser:
                 - "auto": Style first, font_size fallback
                 - "style": Use styles.xml outlineLevel only
                 - "font_size": Use font size only
+                - "pattern": Use custom text patterns
             max_heading_level: Maximum heading depth (1-6, default: 6)
             table_format: Output format for tables
                 - "markdown": Markdown table format (default)
@@ -978,6 +986,11 @@ class DocxParser:
                 - "text": Tab-separated plain text
             convert_images: Convert non-standard formats (WDP, TMP, EMF) to PNG (default: True)
             convert_circled_numbers: Convert ①②③ to numbered list format (default: True)
+            heading_patterns: Custom patterns for hierarchy_mode="pattern"
+                List of (pattern, level) tuples. Pattern can be:
+                - Literal string: "I. ", "1. ", "1)", "(1)"
+                - Regex pattern starting with ^: "^[IVX]+\\. ", "^\\d+\\. "
+                Example: [("I. ", 1), ("1. ", 2), ("1)", 3), ("(1)", 4)]
         """
         self.extract_images = extract_images
         self.image_placeholder = image_placeholder
@@ -990,6 +1003,7 @@ class DocxParser:
         self.max_heading_level = min(max(1, max_heading_level), 6)
         self.table_format = TableFormat(table_format)
         self.convert_circled_numbers = convert_circled_numbers
+        self.heading_patterns = self._compile_heading_patterns(heading_patterns)
 
     def parse(
         self,
@@ -1406,6 +1420,125 @@ class DocxParser:
 
         return hierarchy
 
+    def _compile_heading_patterns(
+        self,
+        patterns: Optional[List[Tuple[str, int]]]
+    ) -> Optional[List[Tuple[re.Pattern, int]]]:
+        """
+        Compile heading patterns to regex patterns.
+
+        User-friendly patterns are automatically converted:
+            "I. " → matches I. II. III. IV. (Roman numerals)
+            "Ⅰ. " → matches Ⅰ. Ⅱ. Ⅲ. (Fullwidth Roman numerals)
+            "1. " → matches 1. 2. 3. (Numbers with dot)
+            "1) " → matches 1) 2) 3) (Numbers with paren)
+            "(1) " → matches (1) (2) (3) (Parenthesized numbers)
+            "A. " → matches A. B. C. (Uppercase letters)
+            "a. " → matches a. b. c. (Lowercase letters)
+            "가. " → matches 가. 나. 다. (Korean letters)
+
+        Args:
+            patterns: List of (pattern_string, heading_level) tuples
+                Examples: [("I. ", 1), ("1. ", 2), ("1) ", 3), ("(1) ", 4)]
+
+        Returns:
+            List of (compiled_regex, heading_level) tuples
+        """
+        if not patterns:
+            return None
+
+        compiled = []
+        for pattern_str, level in patterns:
+            regex_pattern = self._convert_to_regex(pattern_str)
+
+            try:
+                compiled.append((re.compile(regex_pattern), level))
+            except re.error as e:
+                raise ValueError(f"Invalid heading pattern '{pattern_str}': {e}")
+
+        return compiled
+
+    def _convert_to_regex(self, pattern: str) -> str:
+        """
+        Convert user-friendly pattern to regex.
+
+        Examples:
+            "I. " → "^[IVXLCDMivxlcdm]+\\. "
+            "Ⅰ. " → "^[Ⅰ-Ⅻⅰ-ⅻ]+\\. "
+            "1. " → "^\\d+\\. "
+            "1) " → "^\\d+\\) "
+            "(1) " → "^\\(\\d+\\) "
+            "A. " → "^[A-Z]+\\. "
+            "a) " → "^[a-z]+\\) "
+        """
+        # If already a regex (starts with ^), return as-is
+        if pattern.startswith('^'):
+            return pattern
+
+        # Define pattern templates
+        conversions = [
+            # Roman numerals (half-width): I. II. III.
+            (r'^[IVXLCDMivxlcdm]+\. $', r'^[IVXLCDMivxlcdm]+\. '),
+            (r'^[IVXLCDMivxlcdm]+\.$', r'^[IVXLCDMivxlcdm]+\.'),
+            # Roman numerals (full-width): Ⅰ. Ⅱ. Ⅲ.
+            (r'^[Ⅰ-Ⅻⅰ-ⅻ]+\. $', r'^[Ⅰ-Ⅻⅰ-ⅻ]+\. '),
+            (r'^[Ⅰ-Ⅻⅰ-ⅻ]+\.$', r'^[Ⅰ-Ⅻⅰ-ⅻ]+\.'),
+            # Numbers with dot: 1. 2. 3.
+            (r'^\d+\. $', r'^\d+\. '),
+            (r'^\d+\.$', r'^\d+\.'),
+            # Numbers with paren: 1) 2) 3)
+            (r'^\d+\) $', r'^\d+\) '),
+            (r'^\d+\)$', r'^\d+\)'),
+            # Parenthesized numbers: (1) (2) (3)
+            (r'^\(\d+\) $', r'^\(\d+\) '),
+            (r'^\(\d+\)$', r'^\(\d+\)'),
+            # Uppercase letters: A. B. C.
+            (r'^[A-Z]+\. $', r'^[A-Z]+\. '),
+            (r'^[A-Z]+\.$', r'^[A-Z]+\.'),
+            # Lowercase letters with dot: a. b. c.
+            (r'^[a-z]+\. $', r'^[a-z]+\. '),
+            (r'^[a-z]+\.$', r'^[a-z]+\.'),
+            # Lowercase letters with paren: a) b) c)
+            (r'^[a-z]+\) $', r'^[a-z]+\) '),
+            (r'^[a-z]+\)$', r'^[a-z]+\)'),
+            # Korean consonants: 가. 나. 다.
+            (r'^[가-힣]\. $', r'^[가-힣]\. '),
+            (r'^[가-힣]\.$', r'^[가-힣]\.'),
+        ]
+
+        # Check if pattern matches any known template
+        for template_check, template_regex in conversions:
+            if re.match(template_check, pattern):
+                return template_regex
+
+        # Fallback: escape and add ^ for line start
+        escaped = re.escape(pattern)
+        return f'^{escaped}'
+
+    def _get_heading_level_by_pattern(self, text: str) -> Optional[int]:
+        """
+        Determine heading level based on text patterns.
+
+        Args:
+            text: Paragraph text to check
+
+        Returns:
+            Heading level (1-6) or None if no pattern matches
+        """
+        if not self.heading_patterns or not text:
+            return None
+
+        text_stripped = text.strip()
+        if not text_stripped:
+            return None
+
+        for pattern, level in self.heading_patterns:
+            if pattern.match(text_stripped):
+                if 1 <= level <= self.max_heading_level:
+                    return level
+
+        return None
+
     def _get_heading_level(
         self,
         elem: ET.Element,
@@ -1671,7 +1804,15 @@ class DocxParser:
 
         # Apply heading markup if hierarchy detection is enabled
         if self.hierarchy_mode != HierarchyMode.NONE and text.strip():
-            heading_level = self._get_heading_level(elem, styles, font_size_hierarchy)
+            heading_level = None
+
+            # Pattern-based detection uses text content
+            if self.hierarchy_mode == HierarchyMode.PATTERN:
+                heading_level = self._get_heading_level_by_pattern(text)
+            else:
+                # Style/font-size based detection uses XML element
+                heading_level = self._get_heading_level(elem, styles, font_size_hierarchy)
+
             if heading_level:
                 prefix = "#" * heading_level + " "
                 return prefix + text
@@ -1955,6 +2096,7 @@ def parse_docx(
     save_file: bool = False,
     convert_images: bool = True,
     convert_circled_numbers: bool = True,
+    heading_patterns: Optional[List[Tuple[str, int]]] = None,
 ) -> Union[ParseResult, List[ParseResult]]:
     """
     Convenience function to parse DOCX file(s).
@@ -1981,6 +2123,7 @@ def parse_docx(
             - "auto": Style first, font_size fallback
             - "style": Use styles.xml outlineLevel only
             - "font_size": Use font size only
+            - "pattern": Use custom text patterns (requires heading_patterns)
         max_heading_level: Maximum heading depth (1-6, default: 6)
         table_format: Output format for tables
             - "markdown": Markdown table format (default)
@@ -2003,6 +2146,11 @@ def parse_docx(
         convert_circled_numbers: Convert circled numbers to numbered list (default: True)
             - ① ② ③ -> 1. 2. 3.
             - Content between numbers is indented
+        heading_patterns: Custom patterns for hierarchy_mode="pattern"
+            List of (pattern, heading_level) tuples.
+            - Literal: ("I. ", 1), ("1. ", 2), ("1)", 3), ("(1)", 4)
+            - Regex: ("^[IVX]+\\. ", 1), ("^\\d+\\. ", 2)
+            Example: [("I. ", 1), ("1. ", 2), ("1)", 3), ("(1)", 4)]
 
     Returns:
         ParseResult (single file) or List[ParseResult] (multiple files)
@@ -2078,6 +2226,7 @@ def parse_docx(
         table_format=table_format,
         convert_images=convert_images,
         convert_circled_numbers=convert_circled_numbers,
+        heading_patterns=heading_patterns,
     )
 
     def _save_result(result: ParseResult, out_dir: Path, fmt: OutputFormat) -> None:

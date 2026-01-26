@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "docx-parser"
-version = "0.3.4"
+version = "0.4.0"
 description = "DOCX parser with image extraction, metadata, vision, and LangChain integration"
 readme = "README.md"
 license = "MIT"

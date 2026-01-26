@@ -176,6 +176,97 @@ print(result.metadata.app.words)       # 단어 수
 
 ---
 
+## 📑 헤더 자동 감지 (Hierarchy Mode)
+
+DOCX 문서의 제목/섹션 구조를 자동으로 마크다운 헤더(`#`, `##`, `###`)로 변환합니다.
+
+### 기본 모드
+
+```python
+# 폰트 크기 기반 (큰 폰트 → 상위 헤더)
+result = parse_docx("document.docx", hierarchy_mode="font_size")
+
+# Word 스타일 기반 (Heading 1, Heading 2 등)
+result = parse_docx("document.docx", hierarchy_mode="style")
+
+# 자동 (스타일 우선, 폰트 폴백)
+result = parse_docx("document.docx", hierarchy_mode="auto")
+```
+
+### 🆕 Pattern 모드 (커스텀 패턴)
+
+텍스트 패턴으로 헤더를 감지합니다. LangChain의 `MarkdownHeaderTextSplitter`와 함께 사용하기 좋습니다.
+
+```python
+from docx_parser import parse_docx
+
+# 커스텀 헤더 패턴: (패턴 예시, 헤더레벨)
+heading_patterns = [
+    ("I. ", 1),     # I. II. III. IV. → H1
+    ("1. ", 2),     # 1. 2. 3. 4. → H2
+    ("1) ", 3),     # 1) 2) 3) 4) → H3
+    ("(1) ", 4),    # (1) (2) (3) → H4
+]
+
+result = parse_docx(
+    "document.docx",
+    output_dir="output",
+    hierarchy_mode="pattern",
+    heading_patterns=heading_patterns,
+    save_file=True
+)
+
+# 결과: "I. 개요" → "# I. 개요"
+#       "1. 등록" → "## 1. 등록"
+#       "1) 행사개요" → "### 1) 행사개요"
+```
+
+**지원 패턴:**
+
+| 입력 예시 | 매칭 대상       | 설명          |
+| --------- | --------------- | ------------- |
+| `"I. "`   | I. II. III. IV. | 로마숫자      |
+| `"Ⅰ. "`   | Ⅰ. Ⅱ. Ⅲ.        | 전각 로마숫자 |
+| `"1. "`   | 1. 2. 3. 10.    | 숫자+점       |
+| `"1) "`   | 1) 2) 3)        | 숫자+괄호     |
+| `"(1) "`  | (1) (2) (3)     | 괄호+숫자     |
+| `"A. "`   | A. B. C.        | 대문자+점     |
+| `"a) "`   | a) b) c)        | 소문자+괄호   |
+| `"가. "`  | 가. 나. 다.     | 한글+점       |
+
+### LangChain과 함께 사용
+
+```python
+from docx_parser import parse_docx
+from langchain_text_splitters import MarkdownHeaderTextSplitter
+
+# 1. Pattern 모드로 파싱
+result = parse_docx("document.docx", hierarchy_mode="pattern",
+                    heading_patterns=[("^\\d+\\. ", 1), ("^\\d+\\) ", 2)])
+
+# 2. 헤더 기준 분할
+headers_to_split_on = [
+    ("#", "Header 1"),
+    ("##", "Header 2"),
+    ("###", "Header 3"),
+]
+splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
+chunks = splitter.split_text(result.markdown_content)
+
+for chunk in chunks:
+    print(chunk.metadata)  # {'Header 1': '1. 등록', 'Header 2': '1) 개요'}
+```
+
+| hierarchy_mode | 설명                     | 사용 시점                       |
+| -------------- | ------------------------ | ------------------------------- |
+| `"none"`       | 헤더 감지 안 함 (기본값) | 원본 그대로 필요할 때           |
+| `"font_size"`  | 폰트 크기 기반           | 일반적인 문서                   |
+| `"style"`      | Word 스타일 기반         | 스타일이 정확히 적용된 문서     |
+| `"auto"`       | 스타일 → 폰트 폴백       | 다양한 문서                     |
+| `"pattern"`    | 커스텀 텍스트 패턴       | 보고서, 계약서 등 정형화된 문서 |
+
+---
+
 ## 🔗 LangChain / LlamaIndex 연동
 
 ### Document 변환
@@ -264,7 +355,8 @@ def parse_docx(
     output_format: str = "markdown",      # "markdown", "text", "json"
     table_format: str = "markdown",       # "markdown", "html", "json", "text"
     extract_metadata: bool = True,
-    hierarchy_mode: str = "none",         # "none", "auto", "style", "font_size"
+    hierarchy_mode: str = "none",         # "none", "auto", "style", "font_size", "pattern"
+    heading_patterns: Optional[List[Tuple[str, int]]] = None,  # pattern 모드용
     vision_provider: Optional[VisionProvider] = None,
     auto_describe_images: bool = False,
     image_prompts: Optional[Dict[int, str]] = None,

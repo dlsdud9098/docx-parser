@@ -25,9 +25,10 @@ from .parser import (
     StyleInfo,
     TableCell,
     TableData,
+    HeadingPattern,
 )
 
-__version__ = "0.3.4"
+__version__ = "0.4.0"
 __all__ = [
     # Main parser
     "DocxParser",
@@ -39,6 +40,8 @@ __all__ = [
     "OutputFormat",
     "HierarchyMode",
     "TableFormat",
+    # Type aliases
+    "HeadingPattern",
     # Metadata classes
     "DocxMetadata",
     "CoreMetadata",
