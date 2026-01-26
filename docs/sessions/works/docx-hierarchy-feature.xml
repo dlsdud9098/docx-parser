@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<work_detail id="docx-hierarchy-feature">
+  <metadata>
+    <created>2026-01-25T00:00:00+09:00</created>
+    <last_updated>2026-01-25T23:59:00+09:00</last_updated>
+  </metadata>
+
+  <overview>
+    <type>feat</type>
+    <title>DOCX 파서 계층 구조(Heading) 지원 기능</title>
+    <status>done</status>
+    <progress>100%</progress>
+    <goal>DOCX 파일의 font size/style 정보를 분석하여 자동으로 마크다운 heading (#, ##, ###) 생성</goal>
+  </overview>
+
+  <attempts>
+    <attempt date="2026-01-25" outcome="current">
+      <approach>Font size 기반 heading 감지 (본문 크기 기준 필터링)</approach>
+      <reason>
+        한국 문서의 특성상 표준 heading style 대신 custom style 사용.
+        가장 빈번한 font size를 본문으로 간주, 그보다 큰 크기만 heading으로 인식.
+      </reason>
+      <progress>
+        - [x] HierarchyMode enum 추가 (none/auto/style/font_size)
+        - [x] StyleInfo dataclass 추가
+        - [x] _load_styles_info() 메서드 (styles.xml 파싱)
+        - [x] _collect_font_sizes() 메서드
+        - [x] _get_most_common_font_size() 메서드 (핵심 알고리즘)
+        - [x] _build_font_size_hierarchy() 메서드 (본문보다 큰 크기만 매핑)
+        - [x] _get_paragraph_font_size() 메서드 (우선순위: run → paragraph → style)
+        - [x] _get_heading_level() 메서드
+        - [x] __init__() 수정 (hierarchy_mode, max_heading_level 파라미터)
+        - [x] parse() 메서드 수정 (계층 분석 로직)
+        - [x] _parse_content() 메서드 수정 (파라미터 전달)
+        - [x] _parse_paragraph() 메서드 수정 (heading markup 생성)
+        - [x] parse_docx() 함수 수정
+        - [x] langchain_loader.py 수정 (DocxDirectLoader, DocxDirectoryLoader)
+        - [x] __init__.py 수정 (HierarchyMode, StyleInfo export)
+        - [x] 테스트 실행 (GBCC 2025 문서)
+        - [x] TEST_PLAN.md 업데이트 (25개 테스트 케이스 추가)
+      </progress>
+      <session_ref>2026-01/2026-01-25_handover.xml</session_ref>
+    </attempt>
+  </attempts>
+
+  <implementation>
+    <files>
+      <file action="modified">docx_parser/parser.py</file>
+      <file action="modified">docx_parser/langchain_loader.py</file>
+      <file action="modified">docx_parser/__init__.py</file>
+      <file action="modified">docs/TEST_PLAN.md</file>
+      <file action="created">docs/plans/2026-01-25-heading-hierarchy.md</file>
+    </files>
+
+    <classes>
+      <class file="docx_parser/parser.py" status="done">HierarchyMode enum</class>
+      <class file="docx_parser/parser.py" status="done">StyleInfo dataclass</class>
+    </classes>
+
+    <functions>
+      <function file="docx_parser/parser.py" status="done">_load_styles_info()</function>
+      <function file="docx_parser/parser.py" status="done">_collect_font_sizes()</function>
+      <function file="docx_parser/parser.py" status="done">_get_most_common_font_size()</function>
+      <function file="docx_parser/parser.py" status="done">_build_font_size_hierarchy()</function>
+      <function file="docx_parser/parser.py" status="done">_get_paragraph_font_size()</function>
+      <function file="docx_parser/parser.py" status="done">_get_heading_level()</function>
+    </functions>
+
+    <tests>
+      <test status="done">hierarchy_mode="none" (기본값) 테스트 - heading 없음 확인</test>
+      <test status="done">hierarchy_mode="font_size" 테스트 - heading 생성 확인</test>
+      <test status="done">font size 분포 분석 - 본문 9pt, H1~H6 매핑</test>
+      <test status="done">182개 heading 생성 확인 (GBCC 2025 문서)</test>
+    </tests>
+  </implementation>
+
+  <technical_decisions>
+    <decision>
+      <choice>본문 크기 기준 필터링 vs 상위 N개 크기</choice>
+      <reason>사용자 선택: 가장 빈번한 크기를 본문으로, 그보다 큰 것만 heading</reason>
+      <benefit>본문보다 작은 캡션/각주가 heading으로 오인식되지 않음</benefit>
+    </decision>
+    <decision>
+      <choice>hierarchy_mode 기본값: none vs auto</choice>
+      <reason>사용자 선택: none (기존 동작 유지, 명시적 활성화)</reason>
+      <benefit>기존 사용자 코드 호환성 유지</benefit>
+    </decision>
+    <decision>
+      <choice>Font size 우선순위: run → paragraph → style</choice>
+      <reason>DOCX XML 구조에서 더 구체적인 설정이 우선</reason>
+      <benefit>정확한 font size 감지</benefit>
+    </decision>
+  </technical_decisions>
+
+  <test_results>
+    <result>
+      <test_file>GBCC 2025_결과보고서_내부용_F.docx</test_file>
+      <findings>
+        - Font size 분포: 18 (9pt) = 24,898개 (본문)
+        - Heading 크기: 96(48pt)→H1, 72(36pt)→H2, 56(28pt)→H3, 32(16pt)→H4, 28(14pt)→H5, 24(12pt)→H6
+        - 182개 heading 생성
+        - hierarchy_mode="none" 시 heading 없음 확인
+      </findings>
+    </result>
+  </test_results>
+
+  <notes>
+    <note date="2026-01-25">표 셀 내 특수문자 이스케이프도 함께 개선 (*, _, `, \, |, 줄바꿈)</note>
+    <note date="2026-01-25">표 셀 내 여러 줄 처리: paragraph 단위로 &lt;br&gt;로 연결</note>
+    <note date="2026-01-25">TEST_PLAN.md v0.3.0 업데이트: 170→195 테스트 케이스</note>
+  </notes>
+</work_detail>

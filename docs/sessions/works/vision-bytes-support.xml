@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<work_detail id="vision-bytes-support">
+  <metadata>
+    <created>2026-01-25T00:00:00+09:00</created>
+    <last_updated>2026-01-25T00:00:00+09:00</last_updated>
+  </metadata>
+
+  <overview>
+    <type>feat</type>
+    <title>Vision bytes 지원 - output_dir 없이 동작</title>
+    <status>done</status>
+    <progress>100%</progress>
+    <goal>output_dir 없이도 Vision이 동작하도록 이미지 bytes 처리 지원</goal>
+  </overview>
+
+  <attempts>
+    <attempt date="2026-01-25" outcome="current">
+      <approach>ImageInfo에 data 필드 추가 + VisionProvider bytes 지원</approach>
+      <reason>메모리에서 직접 이미지 처리 가능하도록</reason>
+      <progress>
+        - [x] ImageInfo에 data: Optional[bytes] 필드 추가
+        - [x] VisionProvider.describe_image() 시그니처 변경 (Path | bytes | BytesIO)
+        - [x] DocxParser.parse()에서 이미지 bytes를 ImageInfo.data에 저장
+        - [x] TransformersProvider bytes 처리 구현
+        - [x] Vision utils 함수 bytes 지원 (encode_image_base64, get_image_mime_type)
+        - [x] TEST_PLAN.md 업데이트 (TC-28.13~17 추가)
+      </progress>
+      <session_ref>2026-01/2026-01-25_handover.xml</session_ref>
+    </attempt>
+  </attempts>
+
+  <implementation>
+    <files>
+      <file action="modified">docx_parser/parser.py</file>
+      <file action="modified">docx_parser/vision/base.py</file>
+      <file action="modified">docx_parser/vision/transformers.py</file>
+      <file action="modified">docx_parser/vision/utils.py</file>
+      <file action="modified">docs/TEST_PLAN.md</file>
+    </files>
+
+    <functions>
+      <function file="docx_parser/parser.py" status="done">ImageInfo.data 필드 추가</function>
+      <function file="docx_parser/parser.py" status="done">DocxParser.parse() 이미지 bytes 저장</function>
+      <function file="docx_parser/vision/base.py" status="done">VisionProvider.describe_image(Union[Path, bytes, BytesIO])</function>
+      <function file="docx_parser/vision/transformers.py" status="done">TransformersProvider.describe_image() bytes 처리</function>
+      <function file="docx_parser/vision/utils.py" status="done">encode_image_base64(bytes) 지원</function>
+      <function file="docx_parser/vision/utils.py" status="done">get_image_mime_type(bytes) magic number 감지</function>
+    </functions>
+
+    <tests>
+      <test file="manual" status="done">output_dir 없이 파싱 테스트</test>
+      <test file="manual" status="done">ImageInfo.data bytes 확인</test>
+      <test file="manual" status="done">Vision utils bytes 처리 확인</test>
+    </tests>
+  </implementation>
+
+  <notes>
+    <note date="2026-01-25">사용자 요청: 문서 처리할 때 비전까지 한 번에 되게 해줘</note>
+    <note date="2026-01-25">output_dir이 없어도 ImageInfo.data로 Vision 동작</note>
+    <note date="2026-01-25">path와 data 모두 있으면 path 우선 사용</note>
+  </notes>
+</work_detail>

@@ -6,23 +6,7 @@ LangChain과 완벽하게 호환됩니다.
 ## 설치
 
 ```bash
-# 기본 설치
-pip install -e .
-
-# LangChain 지원
-pip install -e ".[langchain]"
-
-# LlamaIndex 지원
-pip install -e ".[llama-index]"
-
-# Vision API (OpenAI, Anthropic, Google)
-pip install -e ".[vision]"
-
-# 로컬 모델 (Transformers)
-pip install -e ".[vision-local]"
-
-# 전체 설치
-pip install -e ".[all]"
+pip install git+https://github.com/dlsdud9098/docx-parser.git
 ```
 
 ## 특징
