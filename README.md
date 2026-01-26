@@ -77,12 +77,17 @@ result = parse_docx("document.docx", output_dir="output",
 
 DOCX 내부의 비표준 이미지 포맷을 자동으로 PNG로 변환합니다.
 
-| 원본 포맷      | 설명                           | 변환            |
-| -------------- | ------------------------------ | --------------- |
-| WDP / HDP      | Windows Media Photo            | → PNG           |
-| TMP            | 임시 파일 (매직 바이트로 감지) | → 원본 또는 PNG |
-| EMF / WMF      | Windows Metafile               | → PNG           |
-| PNG, JPEG, GIF | 표준 웹 포맷                   | 변환 없음       |
+| 원본 포맷      | 설명                           | 변환            | 요구사항       |
+| -------------- | ------------------------------ | --------------- | -------------- |
+| WDP / HDP      | Windows Media Photo (JPEG XR)  | → PNG           | `libjxr-tools` |
+| TMP            | 임시 파일 (매직 바이트로 감지) | → 원본 또는 PNG | -              |
+| EMF / WMF      | Windows Metafile               | → PNG           | `PIL`          |
+| PNG, JPEG, GIF | 표준 웹 포맷                   | 변환 없음       | -              |
+
+```bash
+# WDP 변환을 위한 의존성 설치 (Ubuntu/Debian)
+sudo apt install libjxr-tools
+```
 
 ```python
 # 기본: 자동 변환 (convert_images=True)
