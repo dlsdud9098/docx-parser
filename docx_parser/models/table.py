@@ -7,7 +7,7 @@ This module contains table-related dataclasses.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -83,3 +83,69 @@ class TableData:
             "col_count": self.col_count,
             "row_count": self.row_count
         }
+
+
+@dataclass
+class TableInfo:
+    """Extracted table information (similar to ImageInfo).
+
+    Attributes:
+        index: Table index number (1-based).
+        name: Output filename (e.g., "001_table.json" or "001_table.md").
+        path: Full path to the saved table file.
+        row_count: Number of rows in the table.
+        col_count: Number of columns in the table.
+        headers: First row as headers (if applicable).
+        rows: Table data rows (excluding header) for in-memory access.
+        source_doc: Path to the original DOCX file.
+
+    Example:
+        >>> info = TableInfo(index=1, name="001_table.json", path="/output/001_table.json")
+        >>> info.to_dict()
+        {'index': 1, 'name': '001_table.json', 'path': '/output/001_table.json', ...}
+    """
+    index: int
+    name: str
+    path: Optional[str] = None
+    row_count: int = 0
+    col_count: int = 0
+    headers: Optional[List[str]] = None
+    rows: Optional[List[List[str]]] = None
+    source_doc: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns:
+            Dictionary with index, name, path, row_count, col_count, headers, source_doc.
+            Note: rows field is excluded to keep serialization compact.
+        """
+        return {
+            "index": self.index,
+            "name": self.name,
+            "path": self.path,
+            "row_count": self.row_count,
+            "col_count": self.col_count,
+            "headers": self.headers,
+            "source_doc": self.source_doc,
+        }
+
+    def to_text(self, max_rows: int = 10) -> str:
+        """Convert table to text format for LLM summarization.
+
+        Args:
+            max_rows: Maximum number of rows to include.
+
+        Returns:
+            Text representation of the table.
+        """
+        lines = []
+        if self.headers:
+            lines.append(" | ".join(str(h) for h in self.headers))
+            lines.append("-" * 40)
+        if self.rows:
+            for row in self.rows[:max_rows]:
+                lines.append(" | ".join(str(c) for c in row))
+            if len(self.rows) > max_rows:
+                lines.append(f"... ({len(self.rows) - max_rows}개 행 생략)")
+        return "\n".join(lines)

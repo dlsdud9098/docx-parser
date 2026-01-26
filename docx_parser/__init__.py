@@ -35,6 +35,7 @@ from .models import (
     # Table
     TableCell,
     TableData,
+    TableInfo,
     # Result
     ParseResult,
 )
@@ -74,6 +75,7 @@ __all__ = [
     # Table classes
     "TableCell",
     "TableData",
+    "TableInfo",
 ]
 
 # LangChain loaders (optional import)
@@ -87,5 +89,12 @@ except ImportError:
 try:
     from .vision import create_vision_provider, VisionProvider
     __all__.extend(["create_vision_provider", "VisionProvider"])
+except ImportError:
+    pass
+
+# Table summarizers (optional import)
+try:
+    from .summarizer import create_table_summarizer, TableSummarizer
+    __all__.extend(["create_table_summarizer", "TableSummarizer"])
 except ImportError:
     pass

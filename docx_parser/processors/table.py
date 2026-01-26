@@ -10,6 +10,8 @@ import json
 import logging
 import re
 import xml.etree.ElementTree as ET
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ..formatters import format_table
@@ -19,6 +21,7 @@ from ..models import (
     TableCell,
     TableData,
     TableFormat,
+    TableInfo,
     VerticalMergeMode,
 )
 from ..utils.xml import NAMESPACES
@@ -43,6 +46,9 @@ class TableProcessor(Processor):
         horizontal_merge: HorizontalMergeMode = HorizontalMergeMode.EXPAND,
         table_format: TableFormat = TableFormat.MARKDOWN,
         namespaces: Optional[dict] = None,
+        extract: bool = False,
+        output_dir: Optional[Path] = None,
+        source_doc: Optional[str] = None,
     ) -> None:
         """
         Initialize table processor.
@@ -52,11 +58,19 @@ class TableProcessor(Processor):
             horizontal_merge: How to handle horizontally merged cells.
             table_format: Output format for tables.
             namespaces: Optional custom namespace dictionary.
+            extract: Whether to extract tables to separate files.
+            output_dir: Directory to save extracted tables.
+            source_doc: Path to the source DOCX file.
         """
         self._vertical_merge = vertical_merge
         self._horizontal_merge = horizontal_merge
         self._table_format = table_format
         self._namespaces = namespaces or NAMESPACES
+        self._extract = extract
+        self._output_dir = output_dir
+        self._source_doc = source_doc
+        self._extracted_tables: List[TableInfo] = []
+        self._table_counter = 0
 
     def process(self, context: ParsingContext, **kwargs: Any) -> str:
         """
@@ -179,13 +193,22 @@ class TableProcessor(Processor):
         """
         Parse a table element to the configured format.
 
+        If extraction is enabled and output_dir is set, extracts the table
+        to a separate file and returns a placeholder.
+
         Args:
             elem: Table XML element.
 
         Returns:
-            Formatted table string.
+            Formatted table string or placeholder if extracted.
         """
         table_data = self.parse_table_data(elem)
+
+        # Extract table if enabled and output_dir is set
+        if self._extract and self._output_dir:
+            table_info = self.extract_table(table_data)
+            self._extracted_tables.append(table_info)
+            return f"[TABLE_{table_info.index}]"
 
         # Use formatters module
         return format_table(
@@ -194,6 +217,108 @@ class TableProcessor(Processor):
             self._vertical_merge,
             self._horizontal_merge,
         )
+
+    def extract_table(self, table_data: TableData) -> TableInfo:
+        """
+        Extract a table to a separate file.
+
+        Args:
+            table_data: Parsed table data.
+
+        Returns:
+            TableInfo with extraction metadata.
+        """
+        self._table_counter += 1
+        index = self._table_counter
+
+        # Determine file extension based on format
+        ext_map = {
+            TableFormat.MARKDOWN: "md",
+            TableFormat.JSON: "json",
+            TableFormat.HTML: "html",
+            TableFormat.TEXT: "txt",
+        }
+        ext = ext_map.get(self._table_format, "md")
+        name = f"{index:03d}_table.{ext}"
+        path = self._output_dir / name
+
+        # Extract headers and rows
+        headers = None
+        rows_data = []
+        for row_idx, row in enumerate(table_data.rows):
+            row_texts = [cell.text for cell in row if not cell.is_merged_continuation]
+            if row_idx == 0:
+                headers = row_texts
+            else:
+                rows_data.append(row_texts)
+
+        # Save file based on format
+        self._output_dir.mkdir(parents=True, exist_ok=True)
+
+        if self._table_format == TableFormat.JSON:
+            self._save_as_json(path, index, table_data, headers, rows_data)
+        else:
+            # For markdown, html, text - use format_table
+            formatted = format_table(
+                table_data,
+                self._table_format,
+                self._vertical_merge,
+                self._horizontal_merge,
+            )
+            self._save_as_formatted(path, index, formatted)
+
+        logger.debug(f"Extracted table {index} to {path}")
+
+        return TableInfo(
+            index=index,
+            name=name,
+            path=str(path),
+            row_count=table_data.row_count,
+            col_count=table_data.col_count,
+            headers=headers,
+            rows=rows_data,
+            source_doc=self._source_doc,
+        )
+
+    def _save_as_json(
+        self,
+        path: Path,
+        index: int,
+        table_data: TableData,
+        headers: Optional[List[str]],
+        rows: List[List[str]],
+    ) -> None:
+        """Save extracted table as JSON."""
+        data = {
+            "type": "extracted_table",
+            "index": index,
+            "source": self._source_doc,
+            "row_count": table_data.row_count,
+            "col_count": table_data.col_count,
+            "headers": headers,
+            "rows": rows,
+            "metadata": {
+                "extracted_at": datetime.now().isoformat(),
+            },
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def _save_as_formatted(self, path: Path, index: int, content: str) -> None:
+        """Save extracted table as formatted text (markdown, html, text)."""
+        header = f"# Table {index}\n\nSource: {self._source_doc}\n\n"
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(header + content)
+
+    @property
+    def extracted_tables(self) -> List[TableInfo]:
+        """Get list of extracted tables."""
+        return self._extracted_tables
+
+    def reset(self) -> None:
+        """Reset extraction state for new document."""
+        self._extracted_tables = []
+        self._table_counter = 0
 
     def parse_table_block(self, elem: ET.Element) -> Optional[Dict[str, Any]]:
         """

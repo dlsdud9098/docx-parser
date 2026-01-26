@@ -29,6 +29,7 @@
 | 📍 **위치 보존**   | `[IMAGE_N]` placeholder로 이미지 위치 정확히 표시          |
 | 📊 **메타데이터**  | 작성자, 제목, 페이지 수 등 DOCX 메타데이터 추출            |
 | 🤖 **Vision AI**   | OpenAI, Anthropic, Google, Transformers로 이미지 자동 설명 |
+| 📋 **테이블 요약** | OpenAI, Claude, Gemini, Cerebras로 테이블 LLM 자동 요약    |
 | 🔗 **LangChain**   | `BaseLoader` 인터페이스 완벽 호환                          |
 
 ---
@@ -158,6 +159,84 @@ provider = create_vision_provider("transformers",
 | 8GB   | 2               |
 | 16GB  | 4               |
 | 24GB+ | 8               |
+
+---
+
+## 📋 테이블 추출 및 LLM 요약
+
+### 기본 사용
+
+```python
+from docx_parser import parse_docx
+
+# 테이블 추출 + Cerebras로 요약
+result = parse_docx(
+    "document.docx",
+    output_dir="output",
+    extract_tables=True,
+    auto_summarize_tables="cerebras",  # "openai", "claude", "gemini" 가능
+)
+
+# 결과
+print(result.tables_list)          # List[TableInfo] - 테이블 정보
+print(result.table_descriptions)   # {1: "요약1", 2: "요약2", ...}
+print(result.content)              # [TABLE_N: 요약](path) 형태로 치환됨
+```
+
+### 지원 Provider
+
+| Provider     | 모델                    | 환경변수            |
+| ------------ | ----------------------- | ------------------- |
+| **openai**   | gpt-4o-mini             | `OPENAI_API_KEY`    |
+| **claude**   | claude-3-5-haiku-latest | `ANTHROPIC_API_KEY` |
+| **gemini**   | gemini-2.0-flash        | `GOOGLE_API_KEY`    |
+| **cerebras** | llama-3.3-70b           | `CEREBRAS_API_KEY`  |
+
+### Fallback (여러 Provider 순차 시도)
+
+```python
+# cerebras 실패 → openai → claude 순서로 시도
+result = parse_docx(
+    "document.docx",
+    output_dir="output",
+    extract_tables=True,
+    auto_summarize_tables=["cerebras", "openai", "claude"],
+)
+```
+
+### 멀티 API 키 (Rate Limit 자동 전환)
+
+```bash
+# 환경변수에 쉼표로 구분하여 여러 키 설정
+export CEREBRAS_API_KEY="key1,key2,key3"
+```
+
+```python
+from docx_parser.summarizer import CerebrasSummarizer
+
+# 파라미터로 직접 전달
+summarizer = CerebrasSummarizer(api_key=["key1", "key2", "key3"])
+
+# 또는 쉼표로 구분된 문자열
+summarizer = CerebrasSummarizer(api_key="key1,key2,key3")
+```
+
+Rate limit (429) 또는 인증 에러 발생 시 자동으로 다음 키로 전환됩니다.
+
+### 출력 구조
+
+```
+output/
+├── document.md
+├── images/
+│   └── document/
+│       └── 001_image.png
+└── tables/
+    └── document/
+        ├── 001_table.json   # 또는 .md, .html
+        ├── 002_table.json
+        └── ...
+```
 
 ---
 
@@ -364,6 +443,9 @@ def parse_docx(
     image_prompts: Optional[Dict[int, str]] = None,
     save_file: bool = False,
     convert_images: bool = True,
+    extract_tables: bool = False,         # 테이블 별도 파일로 추출
+    auto_summarize_tables: str | List[str] | bool = False,  # "openai", "claude", "gemini", "cerebras"
+    summarizer_max_tokens: int = 200,     # 테이블 요약 최대 토큰
 ) -> ParseResult | List[ParseResult]
 ```
 
@@ -378,6 +460,8 @@ result.image_count         # 이미지 개수
 result.metadata            # DocxMetadata
 result.images_list         # List[ImageInfo]
 result.image_descriptions  # {num: str} Vision 설명
+result.tables_list         # List[TableInfo] 테이블 정보
+result.table_descriptions  # {num: str} LLM 요약
 
 # 저장 메서드
 result.save_markdown(path)
@@ -387,6 +471,10 @@ result.save_json(path)
 # Vision 메서드
 result.describe_images(provider, image_prompts=None)
 result.get_described_content(provider=None)
+
+# 테이블 메서드
+result.describe_tables(summarizer=None)
+result.replace_table_placeholders(descriptions=None)
 
 # Framework 변환
 result.to_langchain_documents(described=False, provider=None)
@@ -426,7 +514,7 @@ result = parse_docx("document.docx", output_format="json")
 
 ```
 docx_parser/
-├── parser.py           # 오케스트레이션 (113줄)
+├── parser.py           # 오케스트레이션
 ├── processors/         # 핵심 처리 로직
 │   ├── table.py        # 테이블 파싱 (vMerge, gridSpan 지원)
 │   ├── content.py      # 콘텐츠 파싱 (마크다운/JSON 변환)
@@ -446,6 +534,11 @@ docx_parser/
 │   ├── anthropic.py    # Claude
 │   ├── google.py       # Gemini
 │   └── transformers.py # 로컬 모델 (LLaVA 등)
+├── summarizer/         # 테이블 LLM 요약
+│   ├── openai.py       # OpenAI gpt-4o-mini
+│   ├── claude.py       # Anthropic Claude
+│   ├── gemini.py       # Google Gemini
+│   └── cerebras.py     # Cerebras Llama
 └── models/             # 데이터 모델
 ```
 

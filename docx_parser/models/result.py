@@ -14,8 +14,11 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 from .enums import OutputFormat
 from .image import ImageInfo
 from .metadata import DocxMetadata
+from .table import TableInfo
 
 if TYPE_CHECKING:
+    from typing import Callable
+
     from ..vision.base import VisionProvider
 
 
@@ -35,6 +38,8 @@ class ParseResult:
         text_content: Plain text version of content (always available).
         markdown_content: Markdown version of content (always available).
         image_descriptions: Vision-generated image descriptions.
+        tables_list: List of TableInfo objects with extracted table info.
+        table_descriptions: Table summaries (LLM-generated or file paths).
 
     Example:
         >>> result = parse_docx("document.docx")
@@ -53,6 +58,8 @@ class ParseResult:
     text_content: Optional[str] = None
     markdown_content: Optional[str] = None
     image_descriptions: Dict[int, str] = field(default_factory=dict)
+    tables_list: List[TableInfo] = field(default_factory=list)
+    table_descriptions: Dict[int, str] = field(default_factory=dict)
 
     def save_markdown(self, path: str | Path) -> Path:
         """Save content to markdown file.
@@ -206,6 +213,82 @@ class ParseResult:
         )
         return self.image_descriptions
 
+    def describe_tables(
+        self,
+        summarizer: Optional["Callable[[TableInfo], str]"] = None,
+        force: bool = False,
+    ) -> Dict[int, str]:
+        """Generate table summaries.
+
+        Args:
+            summarizer: Function that takes TableInfo and returns summary string.
+                If None, uses file path as summary.
+            force: If True, overwrite existing descriptions.
+
+        Returns:
+            Mapping of table index to summary text.
+
+        Example:
+            >>> # With LLM summarizer
+            >>> def llm_summarize(table: TableInfo) -> str:
+            ...     return llm.invoke(f"Summarize: {table.headers}")
+            >>> descriptions = result.describe_tables(summarizer=llm_summarize)
+
+            >>> # Without summarizer (uses file path)
+            >>> descriptions = result.describe_tables()
+        """
+        if self.table_descriptions and not force:
+            return self.table_descriptions
+
+        for table in self.tables_list:
+            if summarizer:
+                try:
+                    summary = summarizer(table)
+                except Exception as e:
+                    summary = f"[Table summary failed: {e}]"
+            else:
+                if table.path:
+                    summary = table.path
+                else:
+                    summary = f"Table ({table.row_count}x{table.col_count})"
+
+            self.table_descriptions[table.index] = summary
+
+        return self.table_descriptions
+
+    def replace_table_placeholders(
+        self,
+        descriptions: Optional[Dict[int, str]] = None,
+    ) -> str:
+        """Replace [TABLE_N] placeholders with summaries and links.
+
+        Args:
+            descriptions: Mapping of table index to description.
+                If None, uses self.table_descriptions.
+
+        Returns:
+            Content with placeholders replaced.
+
+        Output format:
+            [TABLE_N: summary](path/to/table.json)
+        """
+        content = self.content
+        if isinstance(content, list):
+            content = self.markdown_content or ""
+
+        descs = descriptions or self.table_descriptions
+        table_paths = {t.index: t.path for t in self.tables_list}
+
+        for num, desc in descs.items():
+            path = table_paths.get(num, "")
+            if path:
+                replacement = f"\n\n[TABLE_{num}: {desc}]({path})\n\n"
+            else:
+                replacement = f"\n\n[TABLE_{num}: {desc}]\n\n"
+            content = content.replace(f"[TABLE_{num}]", replacement)
+
+        return content
+
     def get_described_content(
         self,
         provider: Optional["VisionProvider"] = None,
@@ -261,6 +344,8 @@ class ParseResult:
             "content": content_data,
             "image_count": self.image_count,
             "images": [img.to_dict() for img in self.images_list],
+            "table_count": len(self.tables_list),
+            "tables": [t.to_dict() for t in self.tables_list],
             "source": str(self.source) if self.source else None,
             "metadata": self.metadata.to_dict() if self.metadata else {}
         }
@@ -284,6 +369,9 @@ class ParseResult:
             meta["images"] = [img.to_dict() for img in self.images_list]
         if self.image_mapping:
             meta["image_mapping"] = self.image_mapping
+        if self.tables_list:
+            meta["table_count"] = len(self.tables_list)
+            meta["tables"] = [t.to_dict() for t in self.tables_list]
         return meta
 
     def to_langchain_documents(

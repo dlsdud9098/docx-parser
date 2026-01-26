@@ -15,7 +15,7 @@ from .enums import (
 from .image import ImageInfo, StyleInfo
 from .blocks import ParagraphBlock, HeadingBlock, TableBlock, ImageBlock
 from .metadata import CoreMetadata, AppMetadata, DocxMetadata
-from .table import TableCell, TableData
+from .table import TableCell, TableData, TableInfo
 from .result import ParseResult
 
 # Type alias
@@ -46,6 +46,7 @@ __all__ = [
     # Table
     "TableCell",
     "TableData",
+    "TableInfo",
     # Result
     "ParseResult",
 ]

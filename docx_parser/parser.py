@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import zipfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Tuple, Union
 
 from .models import (
     HierarchyMode,
@@ -31,6 +31,9 @@ from .processors import (
 from .utils.xml import METADATA_NAMESPACES, NAMESPACES
 
 if TYPE_CHECKING:
+    from typing import Callable
+
+    from .models import TableInfo
     from .vision.base import VisionProvider
 
 
@@ -64,6 +67,7 @@ class DocxParser:
         table_format: TableFormat | str = TableFormat.MARKDOWN,
         convert_images: bool = True,
         heading_patterns: Optional[List[Tuple[str, int]]] = None,
+        extract_tables: bool = False,
     ):
         """Initialize parser with configuration options."""
         # Store config
@@ -78,6 +82,7 @@ class DocxParser:
         self.max_heading_level = min(max(1, max_heading_level), 6)
         self.table_format = TableFormat(table_format)
         self._heading_patterns = heading_patterns
+        self.extract_tables = extract_tables
 
         # Initialize processors
         self._init_processors()
@@ -89,6 +94,7 @@ class DocxParser:
             vertical_merge=self.vertical_merge,
             horizontal_merge=self.horizontal_merge,
             table_format=self.table_format,
+            extract=self.extract_tables,
         )
 
         # Content processor (uses table processor internally)
@@ -159,19 +165,28 @@ class DocxParser:
 
         Args:
             docx_path: Path to DOCX file
-            output_dir: Directory to save images (optional)
+            output_dir: Directory to save images and tables (optional)
 
         Returns:
-            ParseResult with content, image information, and metadata
+            ParseResult with content, image information, tables, and metadata
         """
         docx_path = Path(docx_path)
 
         # Prepare output directory
         img_dir = None
+        table_dir = None
         if output_dir:
             output_dir = Path(output_dir)
             img_dir = output_dir / "images" / docx_path.stem
             img_dir.mkdir(parents=True, exist_ok=True)
+            if self.extract_tables:
+                table_dir = output_dir / "tables" / docx_path.stem
+                table_dir.mkdir(parents=True, exist_ok=True)
+
+        # Configure table processor for this document
+        self._table_processor._source_doc = str(docx_path)
+        self._table_processor._output_dir = table_dir
+        self._table_processor.reset()
 
         with zipfile.ZipFile(docx_path, 'r') as z:
             # Create parsing context
@@ -221,6 +236,9 @@ class DocxParser:
         else:
             content = markdown_content
 
+        # Collect extracted tables
+        tables_list = self._table_processor.extracted_tables
+
         return ParseResult(
             content=content,
             images=images,
@@ -232,6 +250,7 @@ class DocxParser:
             output_format=self.output_format,
             text_content=text_content,
             markdown_content=markdown_content,
+            tables_list=tables_list,
         )
 
     # Backward compatibility properties
@@ -258,13 +277,20 @@ def parse_docx(
     save_file: bool = False,
     convert_images: bool = True,
     heading_patterns: Optional[List[Tuple[str, int]]] = None,
+    extract_tables: bool = False,
+    auto_summarize_tables: Union[
+        bool,
+        Literal["openai", "claude", "gemini", "cerebras"],
+        List[Literal["openai", "claude", "gemini", "cerebras"]]
+    ] = False,
+    summarizer_max_tokens: int = 200,
 ) -> Union[ParseResult, List[ParseResult]]:
     """
     Convenience function to parse DOCX file(s).
 
     Args:
         docx_path: Path to DOCX file, or list of paths for batch processing
-        output_dir: Directory to save images
+        output_dir: Directory to save images and tables
         extract_images: Whether to extract images
         vertical_merge: How to handle vertically merged cells
         horizontal_merge: How to handle horizontally merged cells
@@ -279,6 +305,15 @@ def parse_docx(
         save_file: Whether to save content file when output_dir is specified
         convert_images: Convert non-standard image formats to PNG
         heading_patterns: Custom patterns for hierarchy_mode="pattern"
+        extract_tables: Whether to extract tables to separate files
+        auto_summarize_tables: Provider(s) for table summarization
+            - False: No summarization (default)
+            - "openai": Use OpenAI API (gpt-4o-mini)
+            - "claude": Use Anthropic Claude API (claude-3-5-haiku)
+            - "gemini": Use Google Gemini API (gemini-2.0-flash)
+            - "cerebras": Use Cerebras API (llama-3.3-70b)
+            - ["cerebras", "openai", ...]: Fallback order (try first, if fails try next)
+        summarizer_max_tokens: Max tokens for table summary (default: 200)
 
     Returns:
         ParseResult (single file) or List[ParseResult] (multiple files)
@@ -294,6 +329,7 @@ def parse_docx(
         table_format=table_format,
         convert_images=convert_images,
         heading_patterns=heading_patterns,
+        extract_tables=extract_tables,
     )
 
     def _save_result(result: ParseResult, out_dir: Path, fmt: OutputFormat) -> None:
@@ -308,14 +344,62 @@ def parse_docx(
         elif fmt == OutputFormat.JSON:
             result.save_json(out_dir / f"{base_name}.json")
 
+    def _process_result(result: ParseResult) -> None:
+        """Process image and table descriptions for a result."""
+        # Handle image descriptions
+        if auto_describe_images and vision_provider and result.images_list:
+            result.describe_images(vision_provider, image_prompts=image_prompts)
+            result.content = result.replace_placeholders(result.image_descriptions)
+
+        # Handle table descriptions
+        if auto_summarize_tables and result.tables_list:
+            # Normalize providers to list
+            if isinstance(auto_summarize_tables, str):
+                providers = [auto_summarize_tables]
+            elif isinstance(auto_summarize_tables, list):
+                providers = auto_summarize_tables
+            else:
+                providers = []
+
+            if providers:
+                from .summarizer import create_table_summarizer
+
+                summaries = None
+                last_error = None
+
+                # Try each provider in order
+                for provider in providers:
+                    try:
+                        summarizer = create_table_summarizer(
+                            provider=provider,
+                            max_tokens=summarizer_max_tokens,
+                        )
+                        summaries = summarizer.summarize_tables(result.tables_list, delay=0.5)
+                        break  # Success, stop trying
+                    except Exception as e:
+                        last_error = e
+                        continue  # Try next provider
+
+                if summaries:
+                    result.table_descriptions = summaries
+                else:
+                    # All providers failed, use file paths as fallback
+                    result.describe_tables(summarizer=None)
+                    if last_error:
+                        import warnings
+                        warnings.warn(f"All summarizers failed. Last error: {last_error}")
+            else:
+                # No provider specified, just use file paths
+                result.describe_tables(summarizer=None)
+
+            result.content = result.replace_table_placeholders(result.table_descriptions)
+
     # Handle list of paths
     if isinstance(docx_path, list):
         results = []
         for path in docx_path:
             result = parser.parse(path, output_dir)
-            if auto_describe_images and vision_provider and result.images_list:
-                result.describe_images(vision_provider, image_prompts=image_prompts)
-                result.content = result.replace_placeholders(result.image_descriptions)
+            _process_result(result)
             if output_dir and save_file:
                 _save_result(result, Path(output_dir), OutputFormat(output_format))
             results.append(result)
@@ -323,10 +407,7 @@ def parse_docx(
 
     # Single path
     result = parser.parse(docx_path, output_dir)
-
-    if auto_describe_images and vision_provider and result.images_list:
-        result.describe_images(vision_provider, image_prompts=image_prompts)
-        result.content = result.replace_placeholders(result.image_descriptions)
+    _process_result(result)
 
     if output_dir and save_file:
         _save_result(result, Path(output_dir), OutputFormat(output_format))

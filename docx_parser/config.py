@@ -126,11 +126,19 @@ class TableConfig:
         vertical_merge: How to handle vertically merged cells.
         horizontal_merge: How to handle horizontally merged cells.
         include_empty: Whether to include empty tables.
+        extract: Whether to extract all tables to separate files.
+        output_dir: Directory to save extracted tables.
     """
     format: TableFormat = TableFormat.MARKDOWN
     vertical_merge: VerticalMergeMode = VerticalMergeMode.REPEAT
     horizontal_merge: HorizontalMergeMode = HorizontalMergeMode.EXPAND
     include_empty: bool = False
+    extract: bool = False
+    output_dir: Optional[Path] = None
+
+    def __post_init__(self) -> None:
+        if self.output_dir is not None and isinstance(self.output_dir, str):
+            self.output_dir = Path(self.output_dir)
 
 
 @dataclass
