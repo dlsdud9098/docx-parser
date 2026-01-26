@@ -73,6 +73,14 @@ all = [
     "torch>=2.0.0",
     "accelerate>=0.20.0",
 ]
+# Development dependencies
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-xdist>=3.0.0",
+    "python-docx>=0.8.11",
+    "ruff>=0.1.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/yourusername/docx-parser"
@@ -80,3 +88,52 @@ Repository = "https://github.com/yourusername/docx-parser"
 
 [tool.hatch.build.targets.wheel]
 packages = ["docx_parser"]
+
+# =============================================================================
+# Testing Configuration
+# =============================================================================
+
+[tool.pytest.ini_options]
+addopts = "--cov=docx_parser --cov-branch --cov-report=term-missing --cov-fail-under=95"
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "requires_api: tests that require external API access",
+    "integration: integration tests",
+    "e2e: end-to-end tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["docx_parser"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
+# =============================================================================
+# Code Quality Tools
+# =============================================================================
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "D", "UP", "B", "C4", "SIM"]
+ignore = ["D100", "D104", "D107"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

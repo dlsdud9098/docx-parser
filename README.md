@@ -6,6 +6,8 @@
 
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Coverage](https://img.shields.io/badge/Coverage-84%25-yellowgreen.svg)](.)
+[![Tests](https://img.shields.io/badge/Tests-691%20passed-brightgreen.svg)](.)
 [![LangChain](https://img.shields.io/badge/LangChain-Compatible-orange.svg)](https://langchain.com/)
 
 [설치](#-설치) •
@@ -415,6 +417,37 @@ result = parse_docx("document.docx", output_format="json")
 | `heading`   | `level`, `content`                                 |
 | `table`     | `headers`, `rows`, `metadata`                      |
 | `image`     | `index`, `path`(optional), `description`(optional) |
+
+---
+
+## 🏗️ 아키텍처
+
+모듈화된 프로세서 기반 아키텍처로 확장성과 테스트 용이성을 제공합니다.
+
+```
+docx_parser/
+├── parser.py           # 오케스트레이션 (113줄)
+├── processors/         # 핵심 처리 로직
+│   ├── table.py        # 테이블 파싱 (vMerge, gridSpan 지원)
+│   ├── content.py      # 콘텐츠 파싱 (마크다운/JSON 변환)
+│   ├── style.py        # 스타일 및 폰트 분석
+│   ├── metadata.py     # 메타데이터 추출
+│   └── image.py        # 이미지 추출 및 변환
+├── strategies/         # 헤딩 감지 전략 (Strategy Pattern)
+│   ├── style.py        # Word 스타일 기반
+│   ├── font_size.py    # 폰트 크기 기반
+│   └── pattern.py      # 커스텀 패턴 기반
+├── formatters/         # 출력 포맷터
+│   ├── markdown.py     # 마크다운 변환
+│   ├── html.py         # HTML 변환
+│   └── json_formatter.py
+├── vision/             # Vision AI 통합
+│   ├── openai.py       # OpenAI GPT-4o
+│   ├── anthropic.py    # Claude
+│   ├── google.py       # Gemini
+│   └── transformers.py # 로컬 모델 (LLaVA 등)
+└── models/             # 데이터 모델
+```
 
 ---
 

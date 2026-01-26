@@ -9,23 +9,40 @@ Features:
 - LangChain Document compatible
 """
 
-from .parser import (
-    DocxParser,
-    parse_docx,
-    ParseResult,
+# Import from models package
+from .models import (
+    # Enums
     VerticalMergeMode,
     HorizontalMergeMode,
     OutputFormat,
     HierarchyMode,
     TableFormat,
-    DocxMetadata,
-    CoreMetadata,
-    AppMetadata,
+    BlockType,
+    # Type alias
+    HeadingPattern,
+    # Image
     ImageInfo,
     StyleInfo,
+    # Blocks
+    ParagraphBlock,
+    HeadingBlock,
+    TableBlock,
+    ImageBlock,
+    # Metadata
+    CoreMetadata,
+    AppMetadata,
+    DocxMetadata,
+    # Table
     TableCell,
     TableData,
-    HeadingPattern,
+    # Result
+    ParseResult,
+)
+
+# Import from parser
+from .parser import (
+    DocxParser,
+    parse_docx,
 )
 
 __version__ = "0.4.0"
@@ -40,6 +57,7 @@ __all__ = [
     "OutputFormat",
     "HierarchyMode",
     "TableFormat",
+    "BlockType",
     # Type aliases
     "HeadingPattern",
     # Metadata classes
@@ -48,6 +66,11 @@ __all__ = [
     "AppMetadata",
     "ImageInfo",
     "StyleInfo",
+    # Block classes
+    "ParagraphBlock",
+    "HeadingBlock",
+    "TableBlock",
+    "ImageBlock",
     # Table classes
     "TableCell",
     "TableData",

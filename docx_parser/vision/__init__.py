@@ -13,17 +13,44 @@ Example:
 
     # 이미지 설명 생성
     description = provider.describe_image(Path("image.png"))
+
+    # 이미지 인코딩
+    from docx_parser.vision import ImageEncoder
+    encoder = ImageEncoder()
+    encoded = encoder.encode(Path("image.png"))
+
+    # 재시도 데코레이터
+    from docx_parser.vision import with_retry, retry_on_rate_limit
+
+    @retry_on_rate_limit(max_retries=3)
+    def call_api():
+        return provider.describe_image(image)
 """
 
 from typing import Optional, Literal
 
 from .base import VisionProvider, ImageDescription
+from .encoder import (
+    ImageEncoder,
+    EncodedImage,
+    encode_image_base64,
+    encode_image_data_uri,
+    get_image_info,
+    get_image_mime_type,
+)
 from .exceptions import (
     VisionError,
     ProviderNotInstalledError,
     APIKeyNotFoundError,
     ImageProcessingError,
     RateLimitError,
+)
+from .retry import (
+    RetryConfig,
+    RetryHandler,
+    with_retry,
+    retry_on_rate_limit,
+    calculate_delay,
 )
 
 ProviderType = Literal["openai", "anthropic", "google", "transformers"]
@@ -132,6 +159,19 @@ __all__ = [
     "GeminiVisionProvider",
     # Local Providers (lazy loaded)
     "TransformersVisionProvider",
+    # Encoder
+    "ImageEncoder",
+    "EncodedImage",
+    "encode_image_base64",
+    "encode_image_data_uri",
+    "get_image_info",
+    "get_image_mime_type",
+    # Retry
+    "RetryConfig",
+    "RetryHandler",
+    "with_retry",
+    "retry_on_rate_limit",
+    "calculate_delay",
     # Exceptions
     "VisionError",
     "ProviderNotInstalledError",
