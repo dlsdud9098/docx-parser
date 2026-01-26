@@ -185,12 +185,14 @@ print(result.content)              # [TABLE_N: 요약](path) 형태로 치환됨
 
 ### 지원 Provider
 
-| Provider     | 모델                    | 환경변수            |
-| ------------ | ----------------------- | ------------------- |
-| **openai**   | gpt-4o-mini             | `OPENAI_API_KEY`    |
-| **claude**   | claude-3-5-haiku-latest | `ANTHROPIC_API_KEY` |
-| **gemini**   | gemini-2.0-flash        | `GOOGLE_API_KEY`    |
-| **cerebras** | llama-3.3-70b           | `CEREBRAS_API_KEY`  |
+| Provider     | 모델                    | 환경변수 (단수/복수 모두 지원)             |
+| ------------ | ----------------------- | ------------------------------------------ |
+| **openai**   | gpt-4o-mini             | `OPENAI_API_KEY` / `OPENAI_API_KEYS`       |
+| **claude**   | claude-3-5-haiku-latest | `ANTHROPIC_API_KEY` / `ANTHROPIC_API_KEYS` |
+| **gemini**   | gemini-2.0-flash        | `GOOGLE_API_KEY` / `GOOGLE_API_KEYS`       |
+| **cerebras** | llama-3.3-70b           | `CEREBRAS_API_KEY` / `CEREBRAS_API_KEYS`   |
+
+> `.env` 파일이 있으면 자동으로 로드됩니다 (`python-dotenv` 필요)
 
 ### Fallback (여러 Provider 순차 시도)
 
