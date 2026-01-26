@@ -253,10 +253,30 @@ class TableSummarizer(ABC):
     def _get_default_prompt(self, language: str) -> str:
         """언어별 기본 프롬프트"""
         prompts = {
-            "ko": "이 테이블이 무엇에 대한 표인지 설명하세요. 표의 주제, 컬럼 구성, 데이터 범위를 포함하세요. 내용을 서술형으로 풀어쓰지 말고 표의 구조와 목적을 설명하세요.",
-            "en": "Describe what this table is about. Include the topic, column structure, and data range. Do not rephrase the content narratively - describe the structure and purpose of the table.",
-            "ja": "このテーブルが何についてのものかを説明してください。主題、列構成、データ範囲を含めてください。内容を文章形式で言い換えず、テーブルの構造と目的を説明してください。",
-            "zh": "描述这个表格是关于什么的。包括主题、列结构和数据范围。不要用叙述形式重述内容，而是描述表格的结构和目的。",
+            "ko": """이 테이블에 대한 검색용 설명을 작성하세요:
+1. 표의 주제 (한 문장)
+2. 컬럼 구성
+3. 주요 키워드 (표에 등장하는 고유명사, 기관명, 인명, 날짜, 숫자 등 검색에 사용될 수 있는 핵심 단어들)
+
+내용을 서술형으로 풀어쓰지 말고, 검색 시 이 표를 찾을 수 있도록 핵심 정보와 키워드를 포함하세요.""",
+            "en": """Write a search-friendly description of this table:
+1. Topic of the table (one sentence)
+2. Column structure
+3. Key terms (proper nouns, organization names, person names, dates, numbers - keywords that could be used to search for this table)
+
+Do not rephrase content narratively. Include core information and keywords to make this table discoverable via search.""",
+            "ja": """このテーブルの検索用説明を作成してください：
+1. テーブルの主題（一文）
+2. 列構成
+3. 主要キーワード（固有名詞、機関名、人名、日付、数字など、検索に使用される可能性のある重要な単語）
+
+内容を文章形式で言い換えず、検索時にこのテーブルを見つけられるように核心情報とキーワードを含めてください。""",
+            "zh": """为这个表格编写搜索友好的描述：
+1. 表格主题（一句话）
+2. 列结构
+3. 关键词（专有名词、机构名、人名、日期、数字等可用于搜索的关键词）
+
+不要用叙述形式重述内容。包含核心信息和关键词，使这个表格可以通过搜索被发现。""",
         }
         return prompts.get(language, prompts["en"])
 
