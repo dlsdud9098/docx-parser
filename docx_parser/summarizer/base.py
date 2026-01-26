@@ -230,6 +230,7 @@ class TableSummarizer(ABC):
             prompt = table_prompts.get(table.index) if table_prompts else None
             try:
                 summary = summarizer._call_api(table, prompt)
+                time.sleep(1.0)  # rate limit 방지
                 return table.index, summary
             except Exception as e:
                 return table.index, f"[테이블 요약 실패: {str(e)}]"
