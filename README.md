@@ -435,14 +435,36 @@ docs = loader.load()
 
 ```
 output/
-├── document.md           # output_format="markdown"
-├── document.json         # output_format="json"
-├── document.txt          # output_format="text"
-└── images/
-    └── document/
-        ├── 001_image1.png
-        ├── 002_image2.png
+└── document/                    # 문서별 폴더
+    ├── document.md              # output_format="markdown"
+    ├── document.json            # output_format="json"
+    ├── document.txt             # output_format="text"
+    ├── images/
+    │   ├── 001_image1.png
+    │   ├── 002_image2.png
+    │   └── ...
+    └── tables/                  # extract_tables=True
+        ├── 001_table.md
+        ├── 002_table.md
         └── ...
+```
+
+### 플레이스홀더 형식
+
+이미지와 테이블 모두 경로가 포함된 링크 형식으로 출력됩니다:
+
+```markdown
+# 이미지 (경로 포함)
+
+[IMAGE_1](output/document/images/001_image1.png)
+
+# 이미지 + Vision AI 설명
+
+[IMAGE_1: 차트 이미지입니다](output/document/images/001_image1.png)
+
+# 테이블 (경로 + 요약)
+
+[TABLE_1: 참석자 명단](output/document/tables/001_table.md)
 ```
 
 ---

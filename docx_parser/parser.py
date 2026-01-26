@@ -181,15 +181,17 @@ class DocxParser:
         """
         docx_path = Path(docx_path)
 
-        # Prepare output directory
+        # Prepare output directory: output/{docx_stem}/images, output/{docx_stem}/tables
         img_dir = None
         table_dir = None
+        doc_output_dir = None
         if output_dir:
             output_dir = Path(output_dir)
-            img_dir = output_dir / "images" / docx_path.stem
+            doc_output_dir = output_dir / docx_path.stem
+            img_dir = doc_output_dir / "images"
             img_dir.mkdir(parents=True, exist_ok=True)
             if self.extract_tables:
-                table_dir = output_dir / "tables" / docx_path.stem
+                table_dir = doc_output_dir / "tables"
                 table_dir.mkdir(parents=True, exist_ok=True)
 
         # Configure table processor for this document
@@ -344,16 +346,22 @@ def parse_docx(
     )
 
     def _save_result(result: ParseResult, out_dir: Path, fmt: OutputFormat) -> None:
-        """Save result based on output_format."""
+        """Save result based on output_format.
+
+        Output structure: output/{docx_stem}/{docx_stem}.md
+        """
         if not out_dir:
             return
         base_name = result.source.stem if result.source else "output"
+        doc_dir = out_dir / base_name
+        doc_dir.mkdir(parents=True, exist_ok=True)
+
         if fmt == OutputFormat.MARKDOWN:
-            result.save_markdown(out_dir / f"{base_name}.md")
+            result.save_markdown(doc_dir / f"{base_name}.md")
         elif fmt == OutputFormat.TEXT:
-            result.save_text(out_dir / f"{base_name}.txt")
+            result.save_text(doc_dir / f"{base_name}.txt")
         elif fmt == OutputFormat.JSON:
-            result.save_json(out_dir / f"{base_name}.json")
+            result.save_json(doc_dir / f"{base_name}.json")
 
     def _process_result(result: ParseResult) -> None:
         """Process image and table descriptions for a result."""
@@ -361,11 +369,14 @@ def parse_docx(
         if year and result.metadata:
             result.metadata.year = year
 
-        # Handle image descriptions
+        # Handle image descriptions (with vision AI)
         if auto_describe_images and vision_provider and result.images_list:
             result.describe_images(vision_provider, image_prompts=image_prompts)
-            result.content = result.replace_placeholders(result.image_descriptions)
-            result.markdown_content = result.content  # Update markdown_content too
+
+        # Always replace image placeholders with paths (like tables)
+        if result.images_list:
+            result.content = result.replace_image_placeholders(result.image_descriptions)
+            result.markdown_content = result.content
 
         # Handle table descriptions
         if auto_summarize_tables and result.tables_list:

@@ -81,10 +81,10 @@ class ImageProcessor(Processor):
         context.rid_to_file = rid_to_file
         context.rid_to_num = rid_to_num
 
-        # Setup output directory
+        # Setup output directory (use as-is, parent already created subdirs)
         img_dir = None
         if output_dir:
-            img_dir = output_dir / "images" / docx_stem
+            img_dir = output_dir
             img_dir.mkdir(parents=True, exist_ok=True)
 
         # Extract images

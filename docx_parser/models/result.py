@@ -169,6 +169,51 @@ class ParseResult:
 
         return content
 
+    def replace_image_placeholders(
+        self,
+        descriptions: Optional[Dict[int, str]] = None,
+    ) -> str:
+        """Replace [IMAGE_N] placeholders with links (like tables).
+
+        Args:
+            descriptions: Mapping of image index to description.
+                If None, uses self.image_descriptions or empty string.
+
+        Returns:
+            Content with placeholders replaced.
+
+        Output format:
+            [IMAGE_N: description](path/to/image.png)
+            or [IMAGE_N](path/to/image.png) if no description
+        """
+        content = self.content
+        if isinstance(content, list):
+            content = self.markdown_content or ""
+
+        descs = descriptions or self.image_descriptions or {}
+        image_paths = {img.index: img.path for img in self.images_list}
+
+        # Replace all image placeholders
+        for img in self.images_list:
+            num = img.index
+            path = image_paths.get(num, "")
+            desc = descs.get(num, "")
+
+            if path:
+                if desc:
+                    replacement = f"[IMAGE_{num}: {desc}]({path})"
+                else:
+                    replacement = f"[IMAGE_{num}]({path})"
+            else:
+                if desc:
+                    replacement = f"[IMAGE_{num}: {desc}]"
+                else:
+                    replacement = f"[IMAGE_{num}]"
+
+            content = content.replace(f"[IMAGE_{num}]", replacement)
+
+        return content
+
     def describe_images(
         self,
         provider: "VisionProvider",
