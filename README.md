@@ -220,6 +220,20 @@ result = parse_docx("document.docx", "output",
 
 ## 📋 테이블 추출 및 LLM 요약
 
+테이블을 별도 파일로 추출하고, **RAG 검색에 최적화된 메타 설명**을 LLM으로 생성합니다.
+
+### 요약 결과 형식
+
+```
+1. 표의 주제: 학술위원회 구성원 목록
+2. 컬럼 구성: 이름, 소속, 학과/전공
+3. 주요 키워드: 박세호, 세브란스병원, 김성배, 서울아산병원, 이정언, 삼성서울병원...
+```
+
+- **표의 주제**: 테이블이 무엇에 대한 것인지
+- **컬럼 구성**: 어떤 열로 구성되어 있는지
+- **주요 키워드**: 고유명사, 기관명, 인명, 날짜 등 검색에 사용될 핵심 단어
+
 ### 기본 사용
 
 ```python
@@ -523,9 +537,9 @@ output/
 
 [IMAGE_1: 차트 이미지입니다](output/document/images/001_image.png)
 
-# 테이블 (경로 + 요약)
+# 테이블 (경로 + RAG 검색용 요약)
 
-[TABLE_1: 참석자 명단](output/document/tables/001_table.md)
+[TABLE_1: 1. 표의 주제: 학술위원회 구성원 목록 2. 컬럼 구성: 이름, 소속, 학과/전공 3. 주요 키워드: 박세호, 세브란스병원, 김성배, 서울아산병원...](output/document/tables/001_table.md)
 ```
 
 ---
@@ -551,7 +565,7 @@ def parse_docx(
     convert_images: bool = True,
     extract_tables: bool = False,         # 테이블 별도 파일로 추출
     auto_summarize_tables: str | List[str] | bool = False,  # "openai", "claude", "gemini", "google", "cerebras"
-    summarizer_max_tokens: int = 200,     # 테이블 요약 최대 토큰
+    summarizer_max_tokens: int = 200,     # 테이블 요약 최대 토큰 (키워드 추출 포함 시 300+ 권장)
     vision_max_tokens: int = 300,         # 이미지 설명 최대 토큰
     vision_model: Optional[str] = None,   # Vision 모델 ID (예: "gpt-4o-mini", "llava-hf/...")
     vision_load_in_4bit: bool = False,    # Transformers 4bit 양자화
