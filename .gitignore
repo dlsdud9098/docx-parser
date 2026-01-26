@@ -4,6 +4,18 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-output_test/
 .DS_Store
 *.tmp
+
+# Output directories
+output/
+output_*/
+test_output/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Docs and tests (local only)
+docs/
+tests/

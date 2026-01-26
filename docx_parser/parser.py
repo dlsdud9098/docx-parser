@@ -450,6 +450,24 @@ def parse_docx(
             result.content = result.replace_image_placeholders(result.image_descriptions)
             result.markdown_content = result.content
 
+        # Update table data with image descriptions before summarization
+        if result.image_descriptions and result.tables_list:
+            import re
+            for table in result.tables_list:
+                if table.rows:
+                    for row_idx, row in enumerate(table.rows):
+                        for col_idx, cell in enumerate(row):
+                            # Replace [IMAGE_N] with [IMAGE_N: description]
+                            def replace_image(match):
+                                num = int(match.group(1))
+                                if num in result.image_descriptions:
+                                    desc = result.image_descriptions[num]
+                                    return f"[IMAGE_{num}: {desc}]"
+                                return match.group(0)
+                            table.rows[row_idx][col_idx] = re.sub(
+                                r'\[IMAGE_(\d+)\]', replace_image, cell
+                            )
+
         # Handle table descriptions
         if auto_summarize_tables and result.tables_list:
             # Normalize providers to list

@@ -135,7 +135,7 @@ class ContentProcessor(Processor):
 
                 elif elem.tag == f"{{{ns['w']}}}tbl":
                     if self._table_processor:
-                        table_text = self._table_processor.parse_table(elem)
+                        table_text = self._table_processor.parse_table(elem, rid_to_num)
                         if table_text:
                             result.append(table_text)
 
@@ -178,7 +178,7 @@ class ContentProcessor(Processor):
 
                 elif elem.tag == f"{{{ns['w']}}}tbl":
                     if self._table_processor:
-                        block = self._table_processor.parse_table_block(elem)
+                        block = self._table_processor.parse_table_block(elem, rid_to_num)
                         if block:
                             blocks.append(block)
 

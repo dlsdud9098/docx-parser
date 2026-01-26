@@ -49,6 +49,7 @@ class TableProcessor(Processor):
         extract: bool = False,
         output_dir: Optional[Path] = None,
         source_doc: Optional[str] = None,
+        image_placeholder: str = "[IMAGE_{num}]",
     ) -> None:
         """
         Initialize table processor.
@@ -61,6 +62,7 @@ class TableProcessor(Processor):
             extract: Whether to extract tables to separate files.
             output_dir: Directory to save extracted tables.
             source_doc: Path to the source DOCX file.
+            image_placeholder: Format string for image placeholders in cells.
         """
         self._vertical_merge = vertical_merge
         self._horizontal_merge = horizontal_merge
@@ -69,6 +71,7 @@ class TableProcessor(Processor):
         self._extract = extract
         self._output_dir = output_dir
         self._source_doc = source_doc
+        self._image_placeholder = image_placeholder
         self._extracted_tables: List[TableInfo] = []
         self._table_counter = 0
 
@@ -88,18 +91,23 @@ class TableProcessor(Processor):
             return ""
         return self.parse_table(element)
 
-    def parse_table_data(self, elem: ET.Element) -> TableData:
+    def parse_table_data(
+        self, elem: ET.Element, rid_to_num: Optional[Dict[str, int]] = None
+    ) -> TableData:
         """
         Parse a table element to structured TableData with merge info preserved.
 
         Args:
             elem: Table XML element.
+            rid_to_num: Mapping of relationship IDs to image numbers.
 
         Returns:
             TableData containing parsed table structure.
         """
         ns = self._namespaces
         w_ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+        a_ns = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+        r_ns = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 
         rows: List[List[TableCell]] = []
         vmerge_info: Dict[int, Dict[str, Any]] = {}  # col_idx -> {text, start_row, rowspan}
@@ -110,12 +118,22 @@ class TableProcessor(Processor):
             col_idx = 0
 
             for cell in row.findall(".//w:tc", ns):
-                # Extract text from each paragraph
+                # Extract text and images from each paragraph
                 paragraphs = []
                 for para in cell.findall(".//w:p", ns):
-                    para_text = "".join(
-                        t.text or "" for t in para.findall(".//w:t", ns)
-                    ).strip()
+                    para_parts = []
+                    for child in para.iter():
+                        # Text
+                        if child.tag == f"{{{ns['w']}}}t" and child.text:
+                            para_parts.append(child.text)
+                        # Image (blip in drawing)
+                        if child.tag == f"{a_ns}blip" and rid_to_num:
+                            embed = child.get(f"{r_ns}embed")
+                            if embed and embed in rid_to_num:
+                                num = rid_to_num[embed]
+                                placeholder = self._image_placeholder.format(num=num)
+                                para_parts.append(placeholder)
+                    para_text = "".join(para_parts).strip()
                     if para_text:
                         paragraphs.append(para_text)
                 cell_text = "\n".join(paragraphs)
@@ -189,7 +207,9 @@ class TableProcessor(Processor):
 
         return TableData(rows=rows, col_count=col_count, row_count=len(rows))
 
-    def parse_table(self, elem: ET.Element) -> str:
+    def parse_table(
+        self, elem: ET.Element, rid_to_num: Optional[Dict[str, int]] = None
+    ) -> str:
         """
         Parse a table element to the configured format.
 
@@ -198,11 +218,12 @@ class TableProcessor(Processor):
 
         Args:
             elem: Table XML element.
+            rid_to_num: Mapping of relationship IDs to image numbers.
 
         Returns:
             Formatted table string or placeholder if extracted.
         """
-        table_data = self.parse_table_data(elem)
+        table_data = self.parse_table_data(elem, rid_to_num)
 
         # Extract table if enabled and output_dir is set
         if self._extract and self._output_dir:
@@ -320,17 +341,20 @@ class TableProcessor(Processor):
         self._extracted_tables = []
         self._table_counter = 0
 
-    def parse_table_block(self, elem: ET.Element) -> Optional[Dict[str, Any]]:
+    def parse_table_block(
+        self, elem: ET.Element, rid_to_num: Optional[Dict[str, int]] = None
+    ) -> Optional[Dict[str, Any]]:
         """
         Parse a table element to a content block for JSON output.
 
         Args:
             elem: Table XML element.
+            rid_to_num: Mapping of relationship IDs to image numbers.
 
         Returns:
             TableBlock dictionary or None if empty.
         """
-        table_data = self.parse_table_data(elem)
+        table_data = self.parse_table_data(elem, rid_to_num)
         if not table_data.rows:
             return None
 
