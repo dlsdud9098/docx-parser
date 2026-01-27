@@ -218,6 +218,48 @@ result = parse_docx("document.docx", "output",
 
 ---
 
+## 🔄 기존 마크다운에 이미지 설명 추가
+
+테이블 요약만 먼저 수행한 뒤, **나중에 이미지 분석을 추가**할 수 있습니다. 기존 테이블 요약은 그대로 유지됩니다.
+
+```python
+from docx_parser import update_markdown_with_images
+
+# 기본 사용법
+update_markdown_with_images(
+    "document.docx",                      # 원본 DOCX
+    "output/document/document.md",        # 기존 마크다운 파일
+    vision_provider="openai"              # Vision AI 제공자
+)
+
+# 폴백 순서 지정 (gemini 실패 시 openai 시도)
+update_markdown_with_images(
+    "document.docx",
+    "output/document/document.md",
+    vision_provider=["gemini", "openai"]
+)
+
+# 저장 없이 결과만 확인
+updated = update_markdown_with_images(
+    "document.docx",
+    "output/document/document.md",
+    save=False
+)
+```
+
+**동작 방식:**
+
+| 단계 | 설명                                                   |
+| ---- | ------------------------------------------------------ |
+| 1    | 기존 MD 파일에서 `[IMAGE_N]` 플레이스홀더 탐색         |
+| 2    | 원본 DOCX에서 이미지 정보만 추출 (테이블 재분석 안 함) |
+| 3    | Vision AI로 이미지 설명 생성                           |
+| 4    | `[IMAGE_N]` → `[IMAGE_N: 설명](경로)` 교체             |
+
+> 이미 설명이 있는 `[IMAGE_N: ...]` 형태는 건너뜁니다.
+
+---
+
 ## 📋 테이블 추출 및 LLM 요약
 
 테이블을 별도 파일로 추출하고, **RAG 검색에 최적화된 메타 설명**을 LLM으로 생성합니다.
@@ -573,6 +615,20 @@ def parse_docx(
     vision_batch_size: int = 4,           # Transformers 배치 크기
     year: Optional[int] = None,           # 문서 연도 (미지정 시 파일명에서 자동 추출)
 ) -> ParseResult | List[ParseResult]
+```
+
+### update_markdown_with_images()
+
+```python
+def update_markdown_with_images(
+    docx_path: str | Path,                # 원본 DOCX 파일 경로
+    markdown_path: str | Path,            # 업데이트할 마크다운 파일 경로
+    vision_provider: str | List[str] | VisionProvider = "openai",
+    image_prompts: Optional[Dict[int, str]] = None,
+    vision_max_tokens: int = 300,
+    vision_model: Optional[str] = None,
+    save: bool = True,                    # True면 파일 덮어쓰기
+) -> str                                  # 업데이트된 마크다운 내용
 ```
 
 ### ParseResult

@@ -271,6 +271,179 @@ class DocxParser:
         return self._compile_patterns()
 
 
+def update_markdown_with_images(
+    docx_path: Union[str, Path],
+    markdown_path: Union[str, Path],
+    vision_provider: Union[
+        str,
+        List[str],
+        "VisionProvider",
+    ] = "openai",
+    image_prompts: Optional[Dict[int, str]] = None,
+    vision_max_tokens: int = 300,
+    vision_model: Optional[str] = None,
+    vision_load_in_4bit: bool = False,
+    vision_load_in_8bit: bool = False,
+    vision_batch_size: int = 4,
+    save: bool = True,
+) -> str:
+    """
+    기존 마크다운 파일에 이미지 설명만 추가합니다.
+    테이블 요약은 그대로 유지됩니다.
+
+    Args:
+        docx_path: 원본 DOCX 파일 경로
+        markdown_path: 업데이트할 마크다운 파일 경로
+        vision_provider: Vision AI 제공자 또는 VisionProvider 인스턴스
+            - "openai": OpenAI gpt-4o (기본값)
+            - "anthropic": Anthropic Claude
+            - "gemini" or "google": Google Gemini
+            - "transformers": 로컬 LLaVA 모델
+            - ["gemini", "openai", ...]: 폴백 순서
+            - VisionProvider 인스턴스: 직접 제공
+        image_prompts: 이미지별 커스텀 프롬프트 {이미지번호: 프롬프트}
+        vision_max_tokens: Vision AI 최대 토큰 수 (기본: 300)
+        vision_model: Vision 모델 ID (예: "gpt-4o-mini")
+        vision_load_in_4bit: Transformers 4bit 양자화 사용
+        vision_load_in_8bit: Transformers 8bit 양자화 사용
+        vision_batch_size: Transformers 배치 크기 (기본: 4)
+        save: True면 마크다운 파일 덮어쓰기 (기본: True)
+
+    Returns:
+        업데이트된 마크다운 내용
+
+    Example:
+        >>> # 기본 사용법
+        >>> updated = update_markdown_with_images(
+        ...     "document.docx",
+        ...     "output/document/document.md",
+        ...     vision_provider="openai"
+        ... )
+
+        >>> # 폴백 순서 지정
+        >>> updated = update_markdown_with_images(
+        ...     "document.docx",
+        ...     "output/document/document.md",
+        ...     vision_provider=["gemini", "openai"]  # gemini 실패시 openai 시도
+        ... )
+
+        >>> # 저장 없이 결과만 확인
+        >>> updated = update_markdown_with_images(
+        ...     "document.docx",
+        ...     "output/document/document.md",
+        ...     save=False
+        ... )
+    """
+    import re
+
+    docx_path = Path(docx_path)
+    markdown_path = Path(markdown_path)
+
+    # 1. 기존 마크다운 파일 읽기
+    if not markdown_path.exists():
+        raise FileNotFoundError(f"마크다운 파일을 찾을 수 없습니다: {markdown_path}")
+
+    with open(markdown_path, 'r', encoding='utf-8') as f:
+        existing_content = f.read()
+
+    # 2. [IMAGE_N] 플레이스홀더 확인 (이미 설명이 있는지 체크)
+    # [IMAGE_1] 형태만 찾음 ([IMAGE_1: ...] 형태는 이미 설명이 있는 것)
+    placeholder_pattern = re.compile(r'\[IMAGE_(\d+)\](?!\()')
+    placeholders = placeholder_pattern.findall(existing_content)
+
+    if not placeholders:
+        # 이미 모든 이미지에 설명이 있거나 이미지가 없음
+        return existing_content
+
+    # 3. DOCX 파싱해서 이미지 정보 추출
+    output_dir = markdown_path.parent
+    parser = DocxParser(
+        extract_images=True,
+        extract_metadata=False,
+        extract_tables=False,
+    )
+    result = parser.parse(docx_path, output_dir=output_dir)
+
+    if not result.images_list:
+        return existing_content
+
+    # 4. Vision AI로 이미지 설명 생성
+    from .vision import create_vision_provider, VisionProvider as VP
+
+    if isinstance(vision_provider, VP):
+        # 이미 VisionProvider 인스턴스인 경우
+        result.describe_images(vision_provider, image_prompts=image_prompts)
+    else:
+        # 문자열 또는 리스트인 경우
+        if isinstance(vision_provider, str):
+            providers = [vision_provider]
+        else:
+            providers = vision_provider
+
+        last_error = None
+        described = False
+
+        for provider_name in providers:
+            try:
+                provider_kwargs: Dict[str, Any] = {
+                    "max_tokens": vision_max_tokens,
+                }
+
+                if vision_model:
+                    provider_kwargs["model"] = vision_model
+
+                if provider_name == "transformers":
+                    provider_kwargs["load_in_4bit"] = vision_load_in_4bit
+                    provider_kwargs["load_in_8bit"] = vision_load_in_8bit
+                    provider_kwargs["batch_size"] = vision_batch_size
+
+                provider = create_vision_provider(
+                    provider=provider_name,
+                    **provider_kwargs,
+                )
+                result.describe_images(provider, image_prompts=image_prompts)
+                described = True
+                break
+            except Exception as e:
+                last_error = e
+                continue
+
+        if not described and last_error:
+            import warnings
+            warnings.warn(f"모든 vision provider가 실패했습니다. 마지막 에러: {last_error}")
+            return existing_content
+
+    if not result.image_descriptions:
+        return existing_content
+
+    # 5. 기존 마크다운에서 [IMAGE_N] 플레이스홀더만 교체
+    # 이미 경로가 있는 경우 ([IMAGE_N](path)) 는 설명만 추가
+    # 경로가 없는 경우 ([IMAGE_N]) 는 설명과 경로 모두 추가
+    updated_content = existing_content
+    image_paths = {img.index: img.path for img in result.images_list}
+
+    for img_num, desc in result.image_descriptions.items():
+        path = image_paths.get(img_num, "")
+
+        # 패턴 1: [IMAGE_N] (경로 없음) -> [IMAGE_N: desc](path)
+        old_placeholder = f"[IMAGE_{img_num}]"
+        if old_placeholder in updated_content:
+            # 바로 뒤에 (path)가 없는 경우만 교체
+            pattern = re.compile(rf'\[IMAGE_{img_num}\](?!\()')
+            if path:
+                replacement = f"[IMAGE_{img_num}: {desc}]({path})"
+            else:
+                replacement = f"[IMAGE_{img_num}: {desc}]"
+            updated_content = pattern.sub(replacement, updated_content)
+
+    # 6. 저장
+    if save:
+        with open(markdown_path, 'w', encoding='utf-8') as f:
+            f.write(updated_content)
+
+    return updated_content
+
+
 def parse_docx(
     docx_path: Union[str, Path, List[str], List[Path]],
     output_dir: Optional[str | Path] = None,

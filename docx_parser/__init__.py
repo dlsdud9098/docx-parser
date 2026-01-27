@@ -44,6 +44,7 @@ from .models import (
 from .parser import (
     DocxParser,
     parse_docx,
+    update_markdown_with_images,
 )
 
 __version__ = "0.4.0"
@@ -51,6 +52,7 @@ __all__ = [
     # Main parser
     "DocxParser",
     "parse_docx",
+    "update_markdown_with_images",
     "ParseResult",
     # Enums
     "VerticalMergeMode",
