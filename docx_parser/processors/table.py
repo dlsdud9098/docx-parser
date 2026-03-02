@@ -26,6 +26,7 @@ from ..models import (
 )
 from ..utils.xml import NAMESPACES
 from .base import ParsingContext, Processor
+from .numbering import NumberingResolver, resolve_sym
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,32 @@ class TableProcessor(Processor):
         self._image_placeholder = image_placeholder
         self._extracted_tables: List[TableInfo] = []
         self._table_counter = 0
+        self._numbering: Optional[NumberingResolver] = None
+
+    def set_numbering(self, numbering: NumberingResolver) -> None:
+        """Set the numbering resolver for list numbering support in table cells."""
+        self._numbering = numbering
+
+    def _resolve_cell_numbering(self, para_elem: ET.Element) -> str:
+        """Resolve list numbering prefix for a paragraph inside a table cell."""
+        if not self._numbering:
+            return ""
+        ns = self._namespaces
+        pPr = para_elem.find(f"{{{ns['w']}}}pPr")
+        if pPr is None:
+            return ""
+        numPr = pPr.find(f"{{{ns['w']}}}numPr")
+        if numPr is None:
+            return ""
+        numId_elem = numPr.find(f"{{{ns['w']}}}numId")
+        if numId_elem is None:
+            return ""
+        num_id = numId_elem.get(f"{{{ns['w']}}}val", "0")
+        if num_id == "0":
+            return ""
+        ilvl_elem = numPr.find(f"{{{ns['w']}}}ilvl")
+        ilvl = ilvl_elem.get(f"{{{ns['w']}}}val", "0") if ilvl_elem is not None else "0"
+        return self._numbering.resolve(num_id, ilvl)
 
     def process(self, context: ParsingContext, **kwargs: Any) -> str:
         """
@@ -126,14 +153,25 @@ class TableProcessor(Processor):
                         # Text
                         if child.tag == f"{{{ns['w']}}}t" and child.text:
                             para_parts.append(child.text)
+                        # Special symbol (w:sym)
+                        elif child.tag == f"{{{ns['w']}}}sym":
+                            font = child.get(f"{{{ns['w']}}}font", "")
+                            char_code = child.get(f"{{{ns['w']}}}char", "")
+                            resolved = resolve_sym(font, char_code)
+                            if resolved:
+                                para_parts.append(resolved)
                         # Image (blip in drawing)
-                        if child.tag == f"{a_ns}blip" and rid_to_num:
+                        elif child.tag == f"{a_ns}blip" and rid_to_num:
                             embed = child.get(f"{r_ns}embed")
                             if embed and embed in rid_to_num:
                                 num = rid_to_num[embed]
                                 placeholder = self._image_placeholder.format(num=num)
                                 para_parts.append(placeholder)
+                    # Prepend list numbering prefix for table cells
+                    numbering_prefix = self._resolve_cell_numbering(para)
                     para_text = "".join(para_parts).strip()
+                    if numbering_prefix and para_text:
+                        para_text = numbering_prefix + para_text
                     if para_text:
                         paragraphs.append(para_text)
                 cell_text = "\n".join(paragraphs)

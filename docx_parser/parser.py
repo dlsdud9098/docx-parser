@@ -24,6 +24,7 @@ from .processors import (
     ContentProcessor,
     ImageProcessor,
     MetadataProcessor,
+    NumberingResolver,
     ParsingContext,
     StyleProcessor,
     TableProcessor,
@@ -227,6 +228,14 @@ class DocxParser:
 
             # Parse document content
             doc_xml = z.read("word/document.xml").decode('utf-8')
+
+            # Load numbering definitions for list numbering support
+            if "word/numbering.xml" in z.namelist():
+                numbering_xml = z.read("word/numbering.xml").decode('utf-8')
+                numbering_resolver = NumberingResolver(numbering_xml)
+                self._content_processor.set_numbering(numbering_resolver)
+                if self._table_processor:
+                    self._table_processor.set_numbering(numbering_resolver)
 
             # Get rid_to_num from context (set by ImageProcessor)
             rid_to_num = context.rid_to_num or {}

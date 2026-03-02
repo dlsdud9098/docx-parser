@@ -21,6 +21,7 @@ from ..models import (
 )
 from ..utils.xml import NAMESPACES
 from .base import ParsingContext, Processor
+from .numbering import NumberingResolver, resolve_sym
 from .style import HeadingDetector
 from .table import TableProcessor
 
@@ -65,6 +66,7 @@ class ContentProcessor(Processor):
         self._output_format = output_format
         self._namespaces = namespaces or NAMESPACES
         self._table_processor = table_processor
+        self._numbering: Optional[NumberingResolver] = None
 
         # Create heading detector
         self._heading_detector = HeadingDetector(
@@ -73,6 +75,10 @@ class ContentProcessor(Processor):
             heading_patterns=heading_patterns,
             namespaces=self._namespaces,
         )
+
+    def set_numbering(self, numbering: NumberingResolver) -> None:
+        """Set the numbering resolver for list numbering support."""
+        self._numbering = numbering
 
     def process(
         self,
@@ -211,8 +217,16 @@ class ContentProcessor(Processor):
             if child.tag == f"{{{ns['w']}}}t" and child.text:
                 para_text.append(child.text)
 
+            # Special symbol (w:sym) — e.g., Wingdings ①②③
+            elif child.tag == f"{{{ns['w']}}}sym":
+                font = child.get(f"{{{ns['w']}}}font", "")
+                char_code = child.get(f"{{{ns['w']}}}char", "")
+                resolved = resolve_sym(font, char_code)
+                if resolved:
+                    para_text.append(resolved)
+
             # Image (blip in drawing)
-            if child.tag == f"{{{ns['a']}}}blip":
+            elif child.tag == f"{{{ns['a']}}}blip":
                 embed = child.get(f"{{{ns['r']}}}embed")
                 if embed and embed in rid_to_num:
                     num = rid_to_num[embed]
@@ -220,6 +234,11 @@ class ContentProcessor(Processor):
                     para_text.append(placeholder)
 
         text = "".join(para_text)
+
+        # Prepend list numbering prefix (e.g., "① ", "1. ")
+        numbering_prefix = self._resolve_numbering(elem)
+        if numbering_prefix:
+            text = numbering_prefix + text
 
         # Apply heading markup if hierarchy detection is enabled
         if self._hierarchy_mode != HierarchyMode.NONE and text.strip():
@@ -232,6 +251,38 @@ class ContentProcessor(Processor):
                 return prefix + text
 
         return text
+
+    def _resolve_numbering(self, elem: ET.Element) -> str:
+        """Extract numbering prefix from paragraph properties.
+
+        Reads w:numPr (numId + ilvl) and resolves via NumberingResolver.
+        """
+        if not self._numbering:
+            return ""
+
+        ns = self._namespaces
+        pPr = elem.find(f"{{{ns['w']}}}pPr")
+        if pPr is None:
+            return ""
+
+        numPr = pPr.find(f"{{{ns['w']}}}numPr")
+        if numPr is None:
+            return ""
+
+        numId_elem = numPr.find(f"{{{ns['w']}}}numId")
+        ilvl_elem = numPr.find(f"{{{ns['w']}}}ilvl")
+
+        if numId_elem is None:
+            return ""
+
+        num_id = numId_elem.get(f"{{{ns['w']}}}val", "0")
+        ilvl = ilvl_elem.get(f"{{{ns['w']}}}val", "0") if ilvl_elem is not None else "0"
+
+        # numId="0" means no numbering
+        if num_id == "0":
+            return ""
+
+        return self._numbering.resolve(num_id, ilvl)
 
     def _parse_paragraph_block(
         self,
@@ -261,8 +312,16 @@ class ContentProcessor(Processor):
             if child.tag == f"{{{ns['w']}}}t" and child.text:
                 para_parts.append(("text", child.text))
 
+            # Special symbol (w:sym) — e.g., Wingdings ①②③
+            elif child.tag == f"{{{ns['w']}}}sym":
+                font = child.get(f"{{{ns['w']}}}font", "")
+                char_code = child.get(f"{{{ns['w']}}}char", "")
+                resolved = resolve_sym(font, char_code)
+                if resolved:
+                    para_parts.append(("text", resolved))
+
             # Image (blip in drawing)
-            if child.tag == f"{{{ns['a']}}}blip":
+            elif child.tag == f"{{{ns['a']}}}blip":
                 embed = child.get(f"{{{ns['r']}}}embed")
                 if embed and embed in rid_to_num:
                     num = rid_to_num[embed]
@@ -271,6 +330,11 @@ class ContentProcessor(Processor):
 
         # Get text content
         text_content = "".join(part[1] for part in para_parts if part[0] == "text")
+
+        # Prepend list numbering prefix
+        numbering_prefix = self._resolve_numbering(elem)
+        if numbering_prefix:
+            text_content = numbering_prefix + text_content
 
         # Pure image paragraph
         if not text_content.strip() and image_indices:

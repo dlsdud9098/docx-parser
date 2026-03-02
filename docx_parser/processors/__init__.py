@@ -42,6 +42,7 @@ from .base import ParsingContext, Processor
 from .content import ContentProcessor
 from .image import ImageProcessor
 from .metadata import MetadataProcessor, extract_metadata
+from .numbering import NumberingResolver, resolve_sym
 from .style import HeadingDetector, StyleProcessor
 from .table import TableProcessor, escape_table_cell
 
@@ -57,8 +58,10 @@ __all__ = [
     "TableProcessor",
     "ImageProcessor",
     "ContentProcessor",
+    "NumberingResolver",
     # Utilities
     "HeadingDetector",
     "escape_table_cell",
     "extract_metadata",
+    "resolve_sym",
 ]
