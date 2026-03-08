@@ -133,11 +133,10 @@ class ContentProcessor(Processor):
         for body in root.findall(".//w:body", ns):
             for elem in body:
                 if elem.tag == f"{{{ns['w']}}}p":
-                    para_text = self._parse_paragraph(
+                    para_segments = self._parse_paragraph(
                         elem, rid_to_num, styles, font_size_hierarchy
                     )
-                    if para_text:
-                        result.append(para_text)
+                    result.extend(para_segments)
 
                 elif elem.tag == f"{{{ns['w']}}}tbl":
                     if self._table_processor:
@@ -190,13 +189,20 @@ class ContentProcessor(Processor):
 
         return blocks
 
+    # Regex to split image placeholder from trailing circled-number text.
+    # e.g., "[IMAGE_54](path)④ ePoster ..." → ["[IMAGE_54](path)", "④ ePoster ..."]
+    _CIRCLED_SPLIT_RE = re.compile(
+        r"(\[IMAGE_\d+\](?:\([^)]*\))?)"  # image placeholder (with optional link)
+        r"([①②③④⑤⑥⑦⑧⑨⑩])"               # immediately followed by circled number
+    )
+
     def _parse_paragraph(
         self,
         elem: ET.Element,
         rid_to_num: Dict[str, int],
         styles: Dict[str, StyleInfo],
         font_size_hierarchy: Dict[int, int],
-    ) -> str:
+    ) -> List[str]:
         """
         Parse a paragraph element with optional heading detection.
 
@@ -207,7 +213,8 @@ class ContentProcessor(Processor):
             font_size_hierarchy: Font size to heading level mapping.
 
         Returns:
-            Parsed paragraph text.
+            List of parsed text segments (usually one, but may split
+            when an image placeholder is followed by heading-pattern text).
         """
         ns = self._namespaces
         para_text = []
@@ -240,6 +247,42 @@ class ContentProcessor(Processor):
         if numbering_prefix:
             text = numbering_prefix + text
 
+        # Split image placeholder from trailing circled-number text.
+        # A single DOCX paragraph may contain an image followed by ①-text,
+        # which should be treated as separate blocks so heading detection works.
+        m = self._CIRCLED_SPLIT_RE.search(text)
+        if m:
+            parts = self._CIRCLED_SPLIT_RE.split(text)
+            # re.split with groups: [before, img, circled, after, ...]
+            segments = []
+            i = 0
+            while i < len(parts):
+                if i + 2 < len(parts) and parts[i + 1] and parts[i + 2]:
+                    # before + image part
+                    before = (parts[i] + parts[i + 1]).strip()
+                    if before:
+                        segments.append(before)
+                    # circled + after
+                    rest_text = parts[i + 2] + (parts[i + 3] if i + 3 < len(parts) else "")
+                    rest_text = rest_text.strip()
+                    if rest_text:
+                        # Apply heading detection to the split-off text
+                        if self._hierarchy_mode != HierarchyMode.NONE:
+                            heading_level = self._heading_detector.detect(
+                                elem, styles, font_size_hierarchy, rest_text
+                            )
+                            if heading_level:
+                                rest_text = "#" * heading_level + " " + rest_text
+                        segments.append(rest_text)
+                    i += 4
+                else:
+                    part = parts[i].strip()
+                    if part:
+                        segments.append(part)
+                    i += 1
+            if segments:
+                return segments
+
         # Apply heading markup if hierarchy detection is enabled
         if self._hierarchy_mode != HierarchyMode.NONE and text.strip():
             heading_level = self._heading_detector.detect(
@@ -248,9 +291,9 @@ class ContentProcessor(Processor):
 
             if heading_level:
                 prefix = "#" * heading_level + " "
-                return prefix + text
+                return [prefix + text]
 
-        return text
+        return [text] if text else []
 
     def _resolve_numbering(self, elem: ET.Element) -> str:
         """Extract numbering prefix from paragraph properties.
